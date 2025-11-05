@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from 'react';
@@ -13,11 +12,10 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { analyzeCaoDocument } from '@/ai/flows/analyze-cao-document-flow';
 
-// Set up the worker for pdf.js
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString();
+// Set up the worker for pdf.js using CDN
+if (typeof window !== 'undefined') {
+    pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+}
 
 export default function AdminCaoPage() {
     const router = useRouter();
