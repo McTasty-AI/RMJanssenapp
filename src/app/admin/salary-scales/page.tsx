@@ -15,9 +15,9 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { analyzeFunctieloonschaalDocument, type AnalyzeFunctieloonschaalDocumentOutput } from '@/ai/flows/analyze-functieloonschaal-document-flow';
 
-// Set up the worker for pdf.js using CDN
+// Set up the worker for pdf.js using CDN - use hardcoded version to avoid webpack import issues
 if (typeof window !== 'undefined') {
-    pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+    pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs';
 }
 
 
