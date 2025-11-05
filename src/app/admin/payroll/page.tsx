@@ -742,10 +742,10 @@ export default function PayrollPage() {
 
 
     return (
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
             <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-2xl font-bold">Salarisadministratie</h1>
+                    <h1 className="text-3xl font-bold">Salarisadministratie</h1>
                     <p className="text-muted-foreground">Genereer een Excel-export voor de salarisadministratie op basis van goedgekeurde weekstaten.</p>
                 </div>
                 <div className="flex items-center gap-2">

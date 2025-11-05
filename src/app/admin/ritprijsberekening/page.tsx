@@ -213,9 +213,14 @@ function RitprijsberekeningPageContent() {
     }, [calculationResult, selectedVehicle, isReturnTrip, returnPercentage]);
 
   return (
-    <div className="container mx-auto p-4 md:p-8 space-y-8">
+    <div className="space-y-8">
         <div>
-            <h1 className="text-2xl font-bold">Ritprijsberekening</h1>
+            <div className="flex justify-between items-center mb-8">
+                <div>
+                    <h1 className="text-3xl font-bold">Ritprijsberekening</h1>
+                    <p className="text-muted-foreground">Bereken de ritprijs per voertuig op basis van de kostprijsberekening.</p>
+                </div>
+            </div>
             <p className="text-muted-foreground">Voer de adressen van de rit in om de afstand en prijs te berekenen.</p>
         </div>
         

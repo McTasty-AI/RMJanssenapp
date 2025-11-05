@@ -276,10 +276,10 @@ export default function AdminRatesPage() {
     }
     
     return (
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
              <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-2xl font-bold">Wekelijks Tarievenbeheer</h1>
+                    <h1 className="text-3xl font-bold">Wekelijks Tarievenbeheer</h1>
                     <p className="text-muted-foreground">Voer hier de wekelijkse DOT percentages of variabele kilometertarieven per klant in.</p>
                 </div>
             </div>

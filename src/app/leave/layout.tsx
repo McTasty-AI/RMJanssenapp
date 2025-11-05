@@ -27,7 +27,7 @@ export default function LeaveLayout({
   return (
     <div className="min-h-screen flex flex-col">
       <Header />
-      <main className="flex-1 px-0 md:px-4 md:p-8 w-full max-w-[90%] mx-auto">
+      <main className="flex-1 container mx-auto p-4 md:p-8">
         {!isLoaded || !user ? (
           <div className="flex items-center justify-center min-h-[400px]">
             <div className="text-center">

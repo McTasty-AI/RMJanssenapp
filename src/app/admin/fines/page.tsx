@@ -541,10 +541,10 @@ export default function AdminFinesPage() {
     const loading = usersLoading || loadingFines;
 
     return (
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
             <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-2xl font-bold">Boetebeheer</h1>
+                    <h1 className="text-3xl font-bold">Boetebeheer</h1>
                     <p className="text-muted-foreground">Voeg hier nieuwe boetes voor chauffeurs toe en bekijk de historie.</p>
                 </div>
                 <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

@@ -141,20 +141,15 @@ const UserManagement = () => {
     }, [toast]);
 
     useEffect(() => {
-        console.log('[useEffect] Running effect:', { isLoaded, currentUser: currentUser?.email, role: currentUser?.role });
-        
         if (!isLoaded) {
-            console.log('[useEffect] Auth not loaded yet, waiting...');
             return;
         }
 
         if (!currentUser || currentUser.role !== 'admin') {
-            console.log('[useEffect] Not admin or no user, setting loading to false');
             setLoading(false);
             return;
         }
 
-        console.log('[useEffect] Admin user detected, fetching users...');
         setLoading(true);
         refreshUsers();
 
@@ -162,13 +157,11 @@ const UserManagement = () => {
         const channel = supabase
             .channel('users-changes')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
-                console.log('[useEffect] Profile changed, refreshing...');
                 refreshUsers();
             })
             .subscribe();
 
         return () => { 
-            console.log('[useEffect] Cleaning up subscription');
             channel.unsubscribe(); 
         };
     }, [isLoaded, currentUser, refreshUsers]);
@@ -295,7 +288,7 @@ const UserManagement = () => {
         <>
             <div className="flex justify-between items-center mb-8 gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold">Medewerkers</h1>
+                    <h1 className="text-3xl font-bold">Medewerkers</h1>
                     <p className="text-muted-foreground">Overzicht van alle medewerkers in het systeem.</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -483,7 +476,7 @@ const UserManagement = () => {
 
 export default function AdminUsersPage() {
   return (
-    <div className="container mx-auto p-4 md:p-8 space-y-8">
+    <div className="space-y-8">
       <UserManagement />
     </div>
   );

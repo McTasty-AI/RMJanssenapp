@@ -121,7 +121,13 @@ export default function SalaryScalesPage() {
     }
 
     return (
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold">Functieloonschalen</h1>
+                    <p className="text-muted-foreground">Bekijk de huidige functieloonschalen en upload nieuwe waarden via AI.</p>
+                </div>
+            </div>
              <Button variant="ghost" onClick={() => router.push('/admin')}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Terug naar Admin Dashboard

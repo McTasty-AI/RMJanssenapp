@@ -214,10 +214,10 @@ export default function DeclarationsPage() {
   }, [declarationStatusByDate]);
 
   return (
-    <div className="w-full max-w-[90%] mx-auto p-4 md:p-8 space-y-8">
+    <div className="space-y-8">
         <div className="flex justify-between items-center">
             <div>
-                <h1 className="text-2xl font-bold">Mijn Declaraties</h1>
+                <h1 className="text-3xl font-bold">Mijn Declaraties</h1>
                 <p className="text-muted-foreground">Dien nieuwe declaraties in en beheer uw overzicht.</p>
             </div>
             <Button onClick={() => handleOpenDialog()}>

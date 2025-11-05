@@ -198,10 +198,10 @@ export default function LeavePage() {
   };
 
   return (
-    <div className="w-full max-w-[90%] mx-auto p-4 md:p-8 space-y-8">
+    <div className="space-y-8">
         <div className="flex justify-between items-center">
             <div>
-                <h1 className="text-2xl font-bold">Mijn Verlofaanvragen</h1>
+                <h1 className="text-3xl font-bold">Mijn Verlofaanvragen</h1>
                 <p className="text-muted-foreground">Dien nieuw verlof in en bekijk uw historie.</p>
             </div>
             <Button onClick={() => setIsDialogOpen(true)}>

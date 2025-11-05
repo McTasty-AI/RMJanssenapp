@@ -35,10 +35,10 @@ export default function TimesheetsPage() {
   }, [weekIdFromUrl, tabFromUrl]);
 
   return (
-    <div className="w-full max-w-[90%] mx-auto p-4 md:p-8">
+    <div className="w-full">
        <div className="flex justify-between items-center mb-8">
             <div>
-                <h1 className="text-2xl font-bold">Urenregistratie</h1>
+                <h1 className="text-3xl font-bold">Urenregistratie</h1>
                 <p className="text-muted-foreground">Dien hier uw wekelijkse uren in en bekijk uw maandoverzicht.</p>
             </div>
         </div>

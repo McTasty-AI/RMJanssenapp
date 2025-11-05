@@ -287,7 +287,7 @@ export default function UserDetailsPage() {
 
     if (loading) {
         return (
-            <div className="container mx-auto p-4 md:p-8">
+            <div className="space-y-8">
                 <Skeleton className="h-8 w-48 mb-4" />
                 <Skeleton className="h-[500px] w-full" />
             </div>
@@ -295,16 +295,22 @@ export default function UserDetailsPage() {
     }
     
     return (
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
             <Button variant="ghost" onClick={() => router.push('/admin/users')}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Terug naar overzicht
             </Button>
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold">Medewerkerdossier: {user?.firstName} {user?.lastName}</h1>
+                    <p className="text-muted-foreground">Beheer hier de gegevens en instellingen van de medewerker.</p>
+                </div>
+            </div>
             <Form {...form}>
                 <form id="user-edit-form" noValidate onSubmit={form.handleSubmit(onSubmit, onInvalid)}>
                     <Card>
                         <CardHeader>
-                            <CardTitle>Medewerkerdossier: {user?.firstName} {user?.lastName}</CardTitle>
+                            <CardTitle>Account & Instellingen</CardTitle>
                             <CardDescription>Beheer hier de gegevens en instellingen van de medewerker.</CardDescription>
                         </CardHeader>
                         <CardContent>

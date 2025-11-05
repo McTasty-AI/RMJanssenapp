@@ -159,11 +159,17 @@ export default function StatusManagementPage() {
     };
 
     return (
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
             <Button variant="ghost" onClick={() => router.push('/admin/fleet')}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Terug naar wagenpark
             </Button>
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold">Voertuig Statusbeheer</h1>
+                    <p className="text-muted-foreground">Beheer de verschillende statussen die voertuigen kunnen hebben.</p>
+                </div>
+            </div>
              <Card className="max-w-2xl mx-auto">
                 <CardHeader>
                     <CardTitle>Statusbeheer Wagenpark</CardTitle>

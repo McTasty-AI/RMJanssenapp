@@ -4,27 +4,7 @@
 @tailwind utilities;
 
 html {
-  zoom: 0.7;
-}
-
-/* Fix voor portaled elements (dropdowns, selects) die verkeerd worden gepositioneerd door zoom */
-/* We compenseren de positionering door de portal container te vergroten, maar normaliseren de tekstgrootte */
-body > div[data-radix-popper-content-wrapper],
-body > div[style*="position: fixed"] > div[data-radix-popper-content-wrapper],
-body > div[style*="position:absolute"] > div[data-radix-popper-content-wrapper] {
-  zoom: 1.4285714286 !important; /* 1 / 0.7 = 1.4285714286 om de zoom te compenseren voor positionering */
-}
-
-/* Normaliseer de tekstgrootte en andere elementen binnen de portal containers */
-/* Target de directe child divs die de daadwerkelijke content bevatten */
-body > div[data-radix-popper-content-wrapper] > div[role],
-body > div[style*="position: fixed"] > div[data-radix-popper-content-wrapper] > div[role],
-body > div[style*="position:absolute"] > div[data-radix-popper-content-wrapper] > div[role],
-body > div[data-radix-popper-content-wrapper] > div:not([data-radix-popper-content-wrapper]),
-body > div[style*="position: fixed"] > div[data-radix-popper-content-wrapper] > div:not([data-radix-popper-content-wrapper]),
-body > div[style*="position:absolute"] > div[data-radix-popper-content-wrapper] > div:not([data-radix-popper-content-wrapper]) {
-  zoom: 0.7 !important; /* Terug naar normale grootte zodat tekstgrootte matcht met de rest van de app */
-  font-size: 0.875rem !important; /* text-sm = 14px, maar we willen dat het matcht met de gezoomde versie */
+  zoom: 0.9;
 }
 
 body {

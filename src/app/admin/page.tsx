@@ -12,11 +12,11 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 
 
-const AdminCard = ({ href, icon: Icon, title, description, badgeCount, needsAttention }: { href: string, icon: React.ElementType, title: string, description: string, badgeCount?: number, needsAttention?: boolean }) => (
-  <Link href={href} className="block group relative h-full">
-    <Card className="transition-all duration-300 ease-in-out group-hover:shadow-lg group-hover:-translate-y-1 h-full flex flex-col group-hover:shadow-primary/20">
+const AdminCard = ({ href, icon: Icon, title, description, badgeCount, needsAttention, disabled }: { href: string, icon: React.ElementType, title: string, description: string, badgeCount?: number, needsAttention?: boolean, disabled?: boolean }) => {
+  const content = (
+    <Card className={`transition-all duration-300 ease-in-out h-full flex flex-col ${disabled ? 'opacity-50 grayscale cursor-not-allowed' : 'group-hover:shadow-lg group-hover:-translate-y-1 group-hover:shadow-primary/20'}`}>
       <CardHeader className="flex flex-row items-center gap-4 p-4 flex-grow">
-        <div className="bg-primary/10 text-primary p-3 rounded-lg transition-transform duration-300 ease-in-out group-hover:scale-110">
+        <div className={`bg-primary/10 text-primary p-3 rounded-lg transition-transform duration-300 ease-in-out ${disabled ? '' : 'group-hover:scale-110'}`}>
           <Icon className="h-6 w-6" />
         </div>
         <div className="flex-1">
@@ -24,22 +24,32 @@ const AdminCard = ({ href, icon: Icon, title, description, badgeCount, needsAtte
           <CardDescription className="text-xs mt-1">{description}</CardDescription>
         </div>
       </CardHeader>
+      {badgeCount !== undefined && badgeCount > 0 && !disabled && (
+        <Badge variant="destructive" className="absolute -top-2 -right-2 h-6 w-6 flex items-center justify-center p-1 text-sm rounded-full">
+          {badgeCount > 9 ? '9+' : badgeCount}
+        </Badge>
+      )}
+      {needsAttention && !disabled && (
+        <div className="absolute top-2 right-2">
+          <span className="relative flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+          </span>
+        </div>
+      )}
     </Card>
-    {badgeCount !== undefined && badgeCount > 0 && (
-      <Badge variant="destructive" className="absolute -top-2 -right-2 h-6 w-6 flex items-center justify-center p-1 text-sm rounded-full">
-        {badgeCount > 9 ? '9+' : badgeCount}
-      </Badge>
-    )}
-    {needsAttention && (
-      <div className="absolute top-2 right-2">
-        <span className="relative flex h-3 w-3">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-        </span>
-      </div>
-    )}
-  </Link>
-);
+  );
+
+  if (disabled) {
+    return <div className="block relative h-full">{content}</div>;
+  }
+
+  return (
+    <Link href={href} className="block group relative h-full">
+      {content}
+    </Link>
+  );
+};
 
 const DashboardSection = ({ title, children }: { title: string, children: React.ReactNode }) => (
     <div className="space-y-4">
@@ -112,7 +122,7 @@ export default function AdminPage() {
     }, [user, isLoaded]);
 
   return (
-    <div className="container mx-auto p-4 md:p-8 space-y-8">
+    <div className="space-y-8">
         <div className="space-y-2">
             <h1 className="text-3xl font-bold">Admin Commandocentrum</h1>
             <p className="text-muted-foreground">
@@ -152,12 +162,14 @@ export default function AdminPage() {
                     icon={Landmark}
                     title="Bank"
                     description="Importeer banktransacties en koppel betalingen."
+                    disabled={true}
                 />
                 <AdminCard
                     href="#"
                     icon={AreaChart}
                     title="Liquiditeitsprognose"
                     description="Krijg inzicht in de toekomstige cashflow (in ontwikkeling)."
+                    disabled={true}
                 />
                  <AdminCard 
                     href="/admin/cost-calculation"
@@ -170,6 +182,7 @@ export default function AdminPage() {
                     icon={Calculator}
                     title="Ritprijsberekening"
                     description="Bereken de ritprijs per voertuig."
+                    disabled={true}
                 />
             </DashboardSection>
 
@@ -224,6 +237,7 @@ export default function AdminPage() {
                     icon={FileText}
                     title="CAO Analyse"
                     description="Upload en analyseer CAO-documenten."
+                    disabled={true}
                 />
             </DashboardSection>
 
@@ -254,6 +268,7 @@ export default function AdminPage() {
                         icon={ShieldAlert}
                         title="Schade Melden"
                         description="Meld hier eventuele schade aan een voertuig."
+                        disabled={true}
                     />
                 </DashboardSection>
 

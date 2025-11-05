@@ -238,9 +238,12 @@ export default function RevenuePage() {
     }, [dateRange, salesInvoices, purchaseInvoices, financials]);
 
   return (
-    <div className="container mx-auto p-4 md:p-8">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-2xl font-bold">Rapporten</h1>
+    <div className="space-y-8">
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold">Rapportage</h1>
+          <p className="text-muted-foreground">Overzicht van financiële gegevens en statistieken.</p>
+        </div>
         <DateRangePicker value={dateRange} onChange={setDateRange} />
       </div>
 

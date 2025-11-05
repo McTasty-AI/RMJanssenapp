@@ -88,18 +88,14 @@ export default function AdminCaoPage() {
 
 
     return (
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
-            <Button variant="ghost" onClick={() => router.push('/admin')}>
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Terug naar Admin Dashboard
-            </Button>
+        <div className="space-y-8">
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold">CAO Analyse</h1>
+                    <p className="text-muted-foreground">Upload een CAO-document en stel een specifieke vraag om snel informatie te vinden.</p>
+                </div>
+            </div>
             <Card className="max-w-3xl mx-auto">
-                <CardHeader>
-                    <CardTitle>CAO Analyse</CardTitle>
-                    <CardDescription>
-                        Upload een CAO-document (PDF of .txt) en stel een specifieke vraag om snel informatie te vinden.
-                    </CardDescription>
-                </CardHeader>
                 <CardContent className="space-y-4">
                     <div className="flex gap-2">
                         <Input id="doc-upload" type="file" onChange={handleFileChange} className="hidden" accept=".pdf,.txt" />

@@ -87,7 +87,7 @@ export default function SupplierDetailsPage() {
 
     if (loading) {
         return (
-            <div className="container mx-auto p-4 md:p-8">
+            <div className="space-y-8">
                 <Skeleton className="h-8 w-48 mb-4" />
                 <Skeleton className="h-[500px] w-full" />
             </div>
@@ -95,11 +95,17 @@ export default function SupplierDetailsPage() {
     }
 
     return (
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
             <Button variant="ghost" onClick={() => router.push('/admin/suppliers')}>
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Terug naar overzicht
             </Button>
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold">Leverancierdossier: {supplier?.companyName}</h1>
+                    <p className="text-muted-foreground">Beheer hier de gegevens van de leverancier.</p>
+                </div>
+            </div>
             <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)}>
                     <Card>

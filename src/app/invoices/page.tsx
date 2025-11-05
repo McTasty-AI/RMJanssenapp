@@ -8,7 +8,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import type { Invoice, InvoiceStatus, InvoiceStatusExtended, Customer } from '@/lib/types';
-import { invoiceStatusTranslations } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -148,7 +147,9 @@ export default function InvoicesPage() {
 
         const channel = supabase
             .channel('invoices-changes')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, () => fetchInvoices())
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, () => {
+                fetchInvoices();
+            })
             .subscribe();
 
         return () => { isMounted = false; channel.unsubscribe(); };
@@ -236,7 +237,14 @@ export default function InvoicesPage() {
                 .delete()
                 .in('id', invoicesToDelete);
             if (error) throw error;
+            
+            // Direct uit de state verwijderen voor snelle UI update
+            setAllInvoices(prev => prev.filter(inv => !invoicesToDelete.includes(inv.id)));
+            
             toast({ title: `Factu(u)r(en) verwijderd`, description: `${invoicesToDelete.length} factu(u)r(en) succesvol verwijderd.` });
+            
+            // Ook de geselecteerde facturen wissen
+            setSelectedInvoices(prev => prev.filter(id => !invoicesToDelete.includes(id)));
         } catch (error) {
             console.error('Error deleting invoices:', error);
             toast({ variant: 'destructive', title: 'Verwijderen mislukt' });
@@ -265,10 +273,10 @@ export default function InvoicesPage() {
     ];
 
     return (
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
             <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-2xl font-bold">Facturen</h1>
+                    <h1 className="text-3xl font-bold">Facturen</h1>
                     <p className="text-muted-foreground">Overzicht van alle verkoopfacturen.</p>
                 </div>
                  <Button onClick={() => router.push('/invoices/new')}>

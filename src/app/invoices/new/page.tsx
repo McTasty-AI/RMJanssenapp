@@ -375,12 +375,12 @@ export default function NewInvoicePage() {
 
     return (
         <div className="bg-muted/30 min-h-screen">
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
             <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSave)}>
                  <div className="flex justify-between items-center mb-8">
                     <div>
-                        <h1 className="text-2xl font-bold">Nieuwe Factuur</h1>
+                        <h1 className="text-3xl font-bold">Nieuwe Factuur</h1>
                         <p className="text-muted-foreground">Stel hier een nieuwe factuur op.</p>
                     </div>
                      <div className='flex gap-2'>

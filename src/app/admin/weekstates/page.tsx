@@ -492,11 +492,11 @@ export default function AdminWeekstatesPage() {
   };
 
   return (
-    <div className="container mx-auto p-4 md:p-8 space-y-8">
+    <div className="space-y-8">
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
             <div>
-                <CardTitle>Weekstaten</CardTitle>
+                <h1 className="text-3xl font-bold">Weekstaten</h1>
                 <CardDescription>Keur weekstaten goed, bekijk het archief en exporteer overzichten.</CardDescription>
             </div>
             <Button onClick={handleMasterExport} disabled={loading}>

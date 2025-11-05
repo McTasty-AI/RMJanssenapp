@@ -168,20 +168,58 @@ export default function VehicleDetailsPage() {
         const fetchInvoices = async () => {
             const { data } = await supabase
                 .from('purchase_invoices')
-                .select('*')
+                .select(`
+                    *,
+                    suppliers:supplier_id(company_name),
+                    purchase_invoice_lines(*)
+                `)
                 .or(`vehicle_id.eq.${vehicle.id},license_plate.eq.${vehicle.licensePlate}`)
                 .order('invoice_date', { ascending: false });
             if (!mounted) return;
-            const list = (data || []).map((r: any) => ({
-                id: r.id,
-                kenmerk: r.invoice_number || r.id,
-                supplierName: String(r.supplier_id || ''),
-                invoiceDate: r.invoice_date,
-                dueDate: r.due_date || undefined,
-                grandTotal: Number(r.total) || 0,
-                status: r.status,
-                createdAt: r.created_at,
-            })) as PurchaseInvoiceType[];
+            const list = (data || []).map((r: any) => {
+                // Get supplier name from relation or fallback to supplier_id
+                const supplierNameFromRelation = (r.suppliers as any)?.company_name || '';
+                
+                // Reconstruct AI result from ocr_data if available
+                const ocrData = r.ocr_data as any;
+                const aiResult = ocrData ? {
+                    supplierName: ocrData.supplierName || supplierNameFromRelation || undefined,
+                    invoiceNumber: ocrData.invoiceNumber || r.invoice_number || undefined,
+                    invoiceDate: ocrData.invoiceDate || r.invoice_date || undefined,
+                    dueDate: ocrData.dueDate || r.due_date || undefined,
+                    grandTotal: ocrData.grandTotal || Number(r.total) || 0,
+                    vatTotal: ocrData.vatTotal || Number(r.vat_total) || undefined,
+                    subTotal: ocrData.subTotal || undefined,
+                    isDirectDebit: ocrData.isDirectDebit || false,
+                    lines: ocrData.lines || (r.purchase_invoice_lines || []).map((line: any) => ({
+                        description: line.description,
+                        quantity: Number(line.quantity) || 1,
+                        unitPrice: Number(line.unit_price) || 0,
+                        total: Number(line.total) || 0,
+                        vatRate: Number(line.vat_rate) || 21,
+                        licensePlate: r.license_plate || null,
+                    })),
+                } : undefined;
+                
+                // Use supplier name from relation, or from AI result, or fallback to empty string
+                const supplierName = supplierNameFromRelation || aiResult?.supplierName || '';
+                
+                return {
+                    id: r.id,
+                    kenmerk: r.invoice_number || r.id,
+                    supplierId: r.supplier_id || undefined,
+                    supplierName: supplierName,
+                    invoiceDate: r.invoice_date || new Date().toISOString(),
+                    dueDate: r.due_date || undefined,
+                    grandTotal: Number(r.total) || 0,
+                    status: r.status,
+                    category: r.category || undefined,
+                    licensePlate: r.license_plate || undefined,
+                    createdAt: r.created_at,
+                    aiResult: aiResult,
+                    ocrResult: aiResult, // Alias for backwards compatibility
+                } as PurchaseInvoiceType;
+            });
             setMaintenanceInvoices(list);
         };
         fetchLogs();
@@ -206,11 +244,25 @@ export default function VehicleDetailsPage() {
 
      const categorizedCosts = useMemo(() => {
         return maintenanceInvoices.reduce((acc, inv) => {
+            // Use invoice-level category if available, otherwise 'overig'
             const category = (inv.category || 'overig') as PurchaseInvoiceCategory;
-            // Sum only the lines relevant to this vehicle
-            const vehicleTotal = inv.aiResult?.lines
-                ?.filter((line: InvoiceLine) => line.licensePlate === vehicle?.licensePlate)
-                .reduce((sum: number, line: InvoiceLine) => sum + (line.total || 0), 0) || 0;
+            
+            // If invoice has a category, use the full invoice total
+            // Otherwise, check if lines are available and sum only lines for this vehicle
+            let vehicleTotal = 0;
+            
+            if (inv.category) {
+                // If invoice has a category, use the full invoice total
+                vehicleTotal = inv.grandTotal || 0;
+            } else if (inv.aiResult?.lines && inv.aiResult.lines.length > 0) {
+                // If no category but lines exist, sum only lines for this vehicle
+                vehicleTotal = inv.aiResult.lines
+                    .filter((line: InvoiceLine) => line.licensePlate === vehicle?.licensePlate)
+                    .reduce((sum: number, line: InvoiceLine) => sum + (line.total || 0), 0);
+            } else {
+                // Fallback: use full invoice total if no lines available
+                vehicleTotal = inv.grandTotal || 0;
+            }
             
             acc[category] = (acc[category] || 0) + vehicleTotal;
             return acc;
@@ -266,7 +318,7 @@ export default function VehicleDetailsPage() {
 
     if (loading) {
         return (
-            <div className="container mx-auto p-4 md:p-8">
+            <div className="space-y-8">
                 <Skeleton className="h-8 w-48 mb-8" />
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <Skeleton className="h-28 w-full" />
@@ -279,7 +331,7 @@ export default function VehicleDetailsPage() {
     }
     
     return (
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
             <div>
                  <Button variant="ghost" onClick={() => router.push('/admin/fleet')} className="mb-4">
                     <ArrowLeft className="mr-2 h-4 w-4" />
@@ -340,10 +392,10 @@ export default function VehicleDetailsPage() {
                                     {maintenanceInvoices.length > 0 ? (
                                         maintenanceInvoices.map(invoice => (
                                             <TableRow key={invoice.id}>
-                                                <TableCell>{format(parseISO(invoice.invoiceDate), 'dd-MM-yyyy')}</TableCell>
-                                                <TableCell>{invoice.supplierName}</TableCell>
+                                                <TableCell>{invoice.invoiceDate ? format(parseISO(invoice.invoiceDate), 'dd-MM-yyyy') : '-'}</TableCell>
+                                                <TableCell>{invoice.supplierName || invoice.aiResult?.supplierName || '-'}</TableCell>
                                                 <TableCell>{invoice.category ? purchaseInvoiceCategoryTranslations[invoice.category] : '-'}</TableCell>
-                                                <TableCell>{invoice.aiResult?.invoiceNumber || '-'}</TableCell>
+                                                <TableCell>{invoice.aiResult?.invoiceNumber || invoice.kenmerk || '-'}</TableCell>
                                                 <TableCell className="text-right">{formatCurrency(invoice.grandTotal)}</TableCell>
                                             </TableRow>
                                         ))

@@ -505,7 +505,7 @@ export default function EditInvoicePage() {
     
     if (loading) {
         return (
-             <div className="container mx-auto p-8 flex justify-center items-center h-screen">
+             <div className="flex justify-center items-center h-screen">
                 <div className="text-center">
                     <Loader2 className="animate-spin mx-auto mt-4 h-8 w-8 text-primary"/>
                 </div>
@@ -530,12 +530,12 @@ export default function EditInvoicePage() {
             </AlertDialogContent>
         </AlertDialog>
 
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
             <Form {...form}>
                 <form onSubmit={form.handleSubmit(handleUpdate)}>
                  <div className="flex justify-between items-center mb-8">
                     <div>
-                        <h1 className="text-2xl font-bold">Factuur Bewerken</h1>
+                        <h1 className="text-3xl font-bold">Factuur Bewerken</h1>
                         <p className="text-muted-foreground">Pas de factuur aan en beheer de status.</p>
                     </div>
                      <div className='flex items-center gap-2'>

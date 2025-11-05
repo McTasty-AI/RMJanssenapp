@@ -239,10 +239,10 @@ export default function AdminSuppliersPage() {
     };
 
     return (
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
              <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-2xl font-bold">Leveranciersbeheer</h1>
+                    <h1 className="text-3xl font-bold">Leveranciersbeheer</h1>
                     <p className="text-muted-foreground">Voeg hier nieuwe leveranciers toe en beheer bestaande gegevens.</p>
                 </div>
                 <Button onClick={() => handleOpenDialog()}>

@@ -380,10 +380,10 @@ export default function MonthlyCalendar() {
                         </div>
                     </div>
                     
-                    {/* 3-maanden view */}
-                    <div className="grid grid-cols-3 gap-4 relative">
-                        {/* Vorige maand - 50% doorzichtigheid */}
-                        <div className="opacity-50 pointer-events-none">
+                    {/* 3-maanden view op desktop, 1 maand op mobiel - gecentreerd op mobiel */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 relative justify-items-center md:justify-items-start">
+                        {/* Vorige maand - 50% doorzichtigheid, verborgen op mobiel */}
+                        <div className="hidden md:block opacity-50 pointer-events-none">
                             <Calendar
                                 month={prevMonth}
                                 locale={nl}
@@ -450,8 +450,8 @@ export default function MonthlyCalendar() {
                             />
                         </div>
                         
-                        {/* Volgende maand - 50% doorzichtigheid */}
-                        <div className="opacity-50 pointer-events-none">
+                        {/* Volgende maand - 50% doorzichtigheid, verborgen op mobiel */}
+                        <div className="hidden md:block opacity-50 pointer-events-none">
                             <Calendar
                                 month={nextMonth}
                                 locale={nl}

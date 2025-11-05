@@ -174,15 +174,21 @@ export default function AdminCompanyPage() {
     const logoUrl = form.watch('logoUrl');
 
     return (
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold">Bedrijfsprofiel</h1>
+                    <p className="text-muted-foreground">Beheer hier de algemene bedrijfsgegevens die op facturen en andere documenten worden gebruikt.</p>
+                </div>
+            </div>
             <div className="max-w-4xl mx-auto">
                 <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)}>
                         <Card>
                             <CardHeader>
-                                <CardTitle>Bedrijfsprofiel</CardTitle>
+                                <CardTitle>Bedrijfsgegevens</CardTitle>
                                 <CardDescription>
-                                    Beheer hier de algemene bedrijfsgegevens die op facturen en andere documenten worden gebruikt.
+                                    Vul hier alle bedrijfsgegevens in.
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="space-y-6">

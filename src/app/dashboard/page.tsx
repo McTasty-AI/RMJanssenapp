@@ -54,7 +54,7 @@ export default function DashboardPage() {
     }
     
     return (
-        <div className="w-full max-w-[90%] mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
              <div className="space-y-2">
                 <h1 className="text-3xl font-bold">Welkom, {user?.firstName}!</h1>
                 <p className="text-muted-foreground">

@@ -6,10 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 export default function DamageReportPage() {
 
     return (
-        <div className="w-full max-w-[90%] mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
              <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-2xl font-bold">Schade Melden</h1>
+                    <h1 className="text-3xl font-bold">Schade Melden</h1>
                     <p className="text-muted-foreground">Meld hier eventuele schade aan uw voertuig.</p>
                 </div>
             </div>

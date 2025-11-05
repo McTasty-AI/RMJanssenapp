@@ -85,9 +85,9 @@ export default function FinesPage() {
     const loading = loadingFines || loadingPolicy;
 
     return (
-        <div className="w-full max-w-[90%] mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
             <div>
-                <h1 className="text-2xl font-bold">Mijn Boetes</h1>
+                <h1 className="text-3xl font-bold">Mijn Boetes</h1>
                 <p className="text-muted-foreground">Hieronder vindt u een overzicht van de aan u toegewezen boetes voor dit jaar.</p>
             </div>
 

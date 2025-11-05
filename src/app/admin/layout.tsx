@@ -8,7 +8,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex flex-col">
       <Header />
       <AdminGuard>
-        <main className="flex-1 px-0 md:container md:px-4 md:p-8">{children}</main>
+        <main className="flex-1 container mx-auto p-4 md:p-8">{children}</main>
       </AdminGuard>
     </div>
   );

@@ -246,12 +246,14 @@ export default function AdminDeclarationsPage() {
 
 
     return (
-        <div className="container mx-auto p-4 md:p-8">
+        <div className="space-y-8">
+            <div className="flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold">Declaratiebeheer</h1>
+                    <p className="text-muted-foreground">Overzicht van alle ingediende declaraties. Beoordeel en wijzig hier hun status.</p>
+                </div>
+            </div>
             <Card>
-                <CardHeader>
-                    <CardTitle>Declaratiebeheer</CardTitle>
-                    <CardDescription>Overzicht van alle ingediende declaraties. Beoordeel en wijzig hier hun status.</CardDescription>
-                </CardHeader>
                 <CardContent>
                     <Table>
                         <TableHeader>

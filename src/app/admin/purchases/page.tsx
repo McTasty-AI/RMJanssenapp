@@ -28,6 +28,7 @@ import { format, isPast, parseISO, isToday, isFuture, startOfToday, getYear, get
 import { nl } from 'date-fns/locale';
 import { supabase } from '@/lib/supabase/client';
 import { mapSupabaseToApp } from '@/lib/utils';
+import { analyzePurchaseInvoice } from '@/ai/flows/analyze-purchase-invoice-flow';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import dynamic from 'next/dynamic';
@@ -216,7 +217,7 @@ export default function PurchasesPage() {
     const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
     const [invoicesToDelete, setInvoicesToDelete] = useState<string[] | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
-    const [useOCR, setUseOCR] = useState(true); // Default: use OCR (free)
+    const [useAI, setUseAI] = useState(true); // Default: use AI analysis (same method as fines)
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [analyzingFiles, setAnalyzingFiles] = useState<AnalyzingFile[]>([]);
@@ -264,16 +265,16 @@ export default function PurchasesPage() {
                 }
             }
             
-            // Get supplier name from relation or OCR data
+            // Get supplier name from relation or AI data
             const supplierNameFromRelation = (r.suppliers as any)?.company_name || '';
             const ocrData = r.ocr_data as any;
             
-            // Use supplier name from relation if available, otherwise from OCR data
+            // Use supplier name from relation if available, otherwise from AI data
             const supplierName = supplierNameFromRelation || ocrData?.supplierName || '';
             
-            // Reconstruct OCR result from stored OCR data or from database fields
-            const ocrResult: any = ocrData ? {
-                // Use OCR data if available (preserves original extraction)
+            // Reconstruct AI result from stored AI data or from database fields
+            const aiResult: any = ocrData ? {
+                // Use AI data if available (preserves original extraction)
                 supplierName: ocrData.supplierName || supplierName || undefined,
                 invoiceNumber: ocrData.invoiceNumber || r.invoice_number || undefined,
                 invoiceDate: ocrData.invoiceDate || r.invoice_date || undefined,
@@ -291,7 +292,7 @@ export default function PurchasesPage() {
                     licensePlate: r.license_plate || null, // License plate from invoice (applied to all lines)
                 })),
             } : {
-                // Fallback: reconstruct from database fields if no OCR data
+                // Fallback: reconstruct from database fields if no AI data
                 supplierName: supplierName || undefined,
                 invoiceNumber: r.invoice_number || undefined,
                 invoiceDate: r.invoice_date || undefined,
@@ -321,8 +322,8 @@ export default function PurchasesPage() {
                 status: r.status,
                 category: r.category || undefined,
                 licensePlate: r.license_plate || undefined,
-                aiResult: ocrResult, // OCR results (backwards compatible)
-                ocrResult: ocrResult,
+                aiResult: aiResult, // AI results (backwards compatible)
+                ocrResult: aiResult, // Alias for backwards compatibility
                 fileDataUri: fileDataUri,
                 createdAt: r.created_at,
             } as PurchaseInvoice;
@@ -372,8 +373,8 @@ export default function PurchasesPage() {
         const supplierMap = new Map(suppliers.map(s => [s.id, s.companyName]));
         setInvoices(prev => prev.map(inv => ({
             ...inv,
-            // Use supplier name from relation if available, otherwise look it up
-            supplierName: inv.supplierName || (inv.supplierId ? (supplierMap.get(inv.supplierId) || '') : inv.supplierName),
+            // Use supplier name from relation if available, otherwise from AI result
+            supplierName: inv.supplierName || (inv.supplierId ? (supplierMap.get(inv.supplierId) || '') : (inv.aiResult?.supplierName || '')),
             // Also update aiResult with supplier name if missing
             aiResult: inv.aiResult ? {
                 ...inv.aiResult,
@@ -497,18 +498,10 @@ export default function PurchasesPage() {
         }
     };
 
-    const handleCreateSupplier = async (dataUri: string): Promise<boolean> => {
+    const handleCreateSupplier = async (dataUri: string, invoiceId?: string): Promise<boolean> => {
         try {
-            // Convert data URI to File for OCR parsing
-            const response = await fetch(dataUri);
-            const blob = await response.blob();
-            const file = new File([blob], 'invoice.pdf', { type: blob.type });
-            
-            // Dynamically import OCR parser to avoid loading tesseract.js on page load
-            const { parseInvoiceWithOCR } = await import('@/lib/invoice-ocr-parser');
-            
-            // Parse invoice with OCR to extract supplier info
-            const result = await parseInvoiceWithOCR(file);
+            // Use AI flow to analyze invoice (same method as fines)
+            const result = await analyzePurchaseInvoice({ invoiceDataUri: dataUri });
             
             if (!result.supplierName) {
                 toast({ variant: 'destructive', title: 'Leverancier niet gevonden', description: 'Kon leveranciersnaam niet uit factuur halen.' });
@@ -523,20 +516,41 @@ export default function PurchasesPage() {
                 return false;
             }
             
-            // Create supplier with basic info (OCR can't extract full details like KVK, IBAN, etc.)
+            // Create supplier with all extracted company details from AI
             const payload = {
                 company_name: supplierName,
-                kvk_number: null,
-                vat_number: null,
-                iban: null,
-                street: null,
-                house_number: null,
-                postal_code: null,
-                city: null,
+                kvk_number: result.kvkNumber || null,
+                vat_number: result.vatNumber || null,
+                iban: result.iban || null,
+                street: result.supplierAddress?.street || null,
+                house_number: result.supplierAddress?.houseNumber || null,
+                postal_code: result.supplierAddress?.postalCode || null,
+                city: result.supplierAddress?.city || null,
             };
             
-            const { error } = await supabase.from('suppliers').insert(payload);
+            const { data: newSupplier, error } = await supabase.from('suppliers').insert(payload).select('id').single();
             if (error) throw error;
+            
+            // If invoiceId is provided, update the invoice with the new supplier_id
+            if (invoiceId && newSupplier?.id) {
+                const { error: updateError } = await supabase
+                    .from('purchase_invoices')
+                    .update({ supplier_id: newSupplier.id })
+                    .eq('id', invoiceId);
+                if (updateError) {
+                    console.error('Error updating invoice with supplier:', updateError);
+                    // Don't fail the whole operation if invoice update fails
+                }
+            }
+            
+            // Refresh suppliers and invoices lists
+            const { data: refreshedSuppliers } = await supabase.from('suppliers').select('*');
+            if (refreshedSuppliers) {
+                setSuppliers(refreshedSuppliers.map(row => mapSupabaseToApp<Supplier>(row)));
+            }
+            if (invoiceId) {
+                await fetchInvoices();
+            }
             
             toast({ title: 'Leverancier aangemaakt', description: `${supplierName} is toegevoegd aan uw leveranciers.` });
             return true;
@@ -587,23 +601,75 @@ export default function PurchasesPage() {
                     let result: any = null;
                     let supplierId: string | null = null;
                     
-                    // Parse invoice with OCR if enabled
-                    if (useOCR) {
-                        // Update progress: starting OCR
+                    // Analyze invoice with AI if enabled (same method as fines)
+                    if (useAI) {
+                        // Update progress: starting AI analysis
                         setAnalyzingFiles(prev => prev.map((f, idx) => 
                             idx === fileIndex ? { ...f, progress: 30 } : f
                         ));
                         
-                        // Dynamically import OCR parser to avoid loading tesseract.js on page load
-                        const { parseInvoiceWithOCR } = await import('@/lib/invoice-ocr-parser');
-                        
-                        // Analyze invoice with OCR (free)
-                        result = await parseInvoiceWithOCR(file);
-                        
-                        // Update progress: analyzed
-                        setAnalyzingFiles(prev => prev.map((f, idx) => 
-                            idx === fileIndex ? { ...f, progress: 50 } : f
-                        ));
+                        try {
+                            // Convert file to data URI for AI analysis (same as fines)
+                            const reader = new FileReader();
+                            const dataUri = await new Promise<string>((resolve, reject) => {
+                                reader.onload = (e) => {
+                                    if (e.target?.result) {
+                                        resolve(e.target.result as string);
+                                    } else {
+                                        reject(new Error('Failed to read file'));
+                                    }
+                                };
+                                reader.onerror = reject;
+                                reader.readAsDataURL(file);
+                            });
+                            
+                            // Analyze invoice with AI flow
+                            result = await analyzePurchaseInvoice({ invoiceDataUri: dataUri });
+                            
+                            // Transform AI result to match expected format (preserve all supplier details)
+                            result = {
+                                supplierName: (result.supplierName || '').trim(),
+                                invoiceNumber: result.invoiceNumber || '',
+                                invoiceDate: result.invoiceDate || '',
+                                dueDate: result.dueDate || '',
+                                grandTotal: result.grandTotal || 0,
+                                subTotal: result.subTotal || 0,
+                                vatTotal: result.vatTotal || 0,
+                                isDirectDebit: result.isDirectDebit || false,
+                                lines: result.lines || [],
+                                // Preserve supplier company details for creating supplier profile
+                                kvkNumber: result.kvkNumber,
+                                vatNumber: result.vatNumber,
+                                iban: result.iban,
+                                supplierAddress: result.supplierAddress,
+                            };
+                            
+                            // Validate supplier name - should not be empty
+                            if (!result.supplierName || result.supplierName === '-' || result.supplierName.length === 0) {
+                                console.warn('AI did not extract supplier name correctly:', result);
+                                toast({
+                                    variant: 'destructive',
+                                    title: 'Waarschuwing',
+                                    description: `Leveranciersnaam niet gevonden in ${file.name}. Voeg handmatig toe via factuurdetails.`,
+                                });
+                            }
+                            
+                            // Update progress: analyzed
+                            setAnalyzingFiles(prev => prev.map((f, idx) => 
+                                idx === fileIndex ? { ...f, progress: 50 } : f
+                            ));
+                        } catch (aiError: any) {
+                            console.error('AI analysis error:', aiError);
+                            result = null;
+                            toast({
+                                variant: 'destructive',
+                                title: 'AI analyse fout',
+                                description: `Factuur analyse mislukt voor ${file.name}: ${aiError.message || 'Onbekende fout'}`,
+                            });
+                            setAnalyzingFiles(prev => prev.map((f, idx) => 
+                                idx === fileIndex ? { ...f, progress: 50 } : f
+                            ));
+                        }
                     } else {
                         // No analysis - just upload file
                         result = null;
@@ -612,9 +678,9 @@ export default function PurchasesPage() {
                         ));
                     }
                     
-                    // Find supplier (only if OCR was used and supplier name found)
+                    // Find supplier (only if AI was used and supplier name found)
                     // Do NOT create supplier automatically - user must do it manually
-                    if (useOCR && result?.supplierName) {
+                    if (useAI && result?.supplierName) {
                         const supplierName = result.supplierName.trim();
                         const { data: existingSupplier } = await supabase
                             .from('suppliers')
@@ -624,14 +690,9 @@ export default function PurchasesPage() {
                         
                         if (existingSupplier?.id) {
                             supplierId = existingSupplier.id as string;
-                        } else {
-                            // Check if supplier exists by KVK number (if available)
-                            if (result.kvkNumber && suppliersKvkMap.has(result.kvkNumber)) {
-                                supplierId = suppliersKvkMap.get(result.kvkNumber)!;
-                            }
-                            // If no supplier found, supplierId remains null
-                            // The supplier name will be available in OCR results for manual creation
                         }
+                        // If no supplier found, supplierId remains null
+                        // The supplier name will be available in AI results for manual creation
                         
                         // Update progress: supplier checked
                         setAnalyzingFiles(prev => prev.map((f, idx) => 
@@ -661,8 +722,8 @@ export default function PurchasesPage() {
                         idx === fileIndex ? { ...f, progress: 80 } : f
                     ));
                     
-                    // Check for duplicates (only if OCR was used)
-                    if (useOCR && supplierId && result?.invoiceNumber && result?.grandTotal) {
+                    // Check for duplicates (only if AI was used)
+                    if (useAI && supplierId && result?.invoiceNumber && result?.grandTotal) {
                         const { data: dup } = await supabase
                             .from('purchase_invoices')
                             .select('id')
@@ -688,9 +749,9 @@ export default function PurchasesPage() {
                         idx === fileIndex ? { ...f, progress: 90 } : f
                     ));
                     
-                    // Extract license plate from OCR result (from lines or document)
+                    // Extract license plate from AI result (from lines or document)
                     let invoiceLicensePlate: string | null = null;
-                    if (useOCR && result?.lines && result.lines.length > 0) {
+                    if (useAI && result?.lines && result.lines.length > 0) {
                         // Try to find a license plate in the lines
                         const plates = result.lines
                             .map((l: any) => l.licensePlate)
@@ -701,9 +762,9 @@ export default function PurchasesPage() {
                         }
                     }
                     
-                    // Store OCR results in database, especially if supplier not found
-                    // This preserves supplier name and other OCR data for manual review
-                    const ocrData = useOCR && result ? {
+                    // Store AI results in database, especially if supplier not found
+                    // This preserves supplier name and other AI data for manual review
+                    const ocrData = useAI && result ? {
                         supplierName: result.supplierName || undefined,
                         invoiceNumber: result.invoiceNumber || undefined,
                         invoiceDate: result.invoiceDate || undefined,
@@ -739,10 +800,10 @@ export default function PurchasesPage() {
                     
                     if (insErr) throw insErr;
                     
-                    // Insert invoice lines if present (only if OCR was used)
+                    // Insert invoice lines if present (only if AI was used)
                     // Note: License plates are stored on the invoice level, not per line
-                    // But we keep the license plate info in the OCR results for display
-                    if (useOCR && result?.lines && result.lines.length > 0) {
+                    // But we keep the license plate info in the AI results for display
+                    if (useAI && result?.lines && result.lines.length > 0) {
                         const lineRows = result.lines.map((l: any) => ({
                             purchase_invoice_id: inserted.id,
                             description: l.description,
@@ -770,8 +831,8 @@ export default function PurchasesPage() {
             
             toast({
                 title: 'Facturen geüpload',
-                description: useOCR
-                    ? `${fileArray.length} factuur(en) succesvol geüpload en geanalyseerd met OCR.`
+                description: useAI
+                    ? `${fileArray.length} factuur(en) succesvol geüpload en geanalyseerd met AI.`
                     : `${fileArray.length} factuur(en) geüpload. Voeg handmatig de gegevens toe door op de factuur te klikken.`,
             });
             
@@ -860,10 +921,10 @@ export default function PurchasesPage() {
     };
 
     const getSupplierId = (invoice: PurchaseInvoiceType): string | undefined => {
-        // Check OCR result first (backwards compatible with aiResult)
-        const ocrData = invoice.ocrResult || invoice.aiResult;
-        if (ocrData?.kvkNumber && suppliersKvkMap.has(ocrData.kvkNumber)) {
-            return suppliersKvkMap.get(ocrData.kvkNumber);
+        // Check AI result first (backwards compatible with ocrResult)
+        const aiData = invoice.aiResult || (invoice as any).ocrResult;
+        if (aiData?.kvkNumber && suppliersKvkMap.has(aiData.kvkNumber)) {
+            return suppliersKvkMap.get(aiData.kvkNumber);
         }
         if (invoice.supplierName && suppliersNameMap.has(invoice.supplierName)) {
             return suppliersNameMap.get(invoice.supplierName);
@@ -881,10 +942,10 @@ export default function PurchasesPage() {
 
 
     return (
-        <div className="container mx-auto p-4 md:p-8 space-y-8">
+        <div className="space-y-8">
             <div className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-2xl font-bold">Inkoopfacturen</h1>
+                    <h1 className="text-3xl font-bold">Inkoopfacturen</h1>
                     <p className="text-muted-foreground">Beheer en verwerk hier uw inkoopfacturen.</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -904,31 +965,33 @@ export default function PurchasesPage() {
              <Alert className="border-dashed border-2">
                  <div className="flex flex-col items-center justify-center p-6 text-center space-y-4">
                     <div className="flex flex-col gap-3 w-full max-w-md">
-                        <div className="flex items-center gap-4 justify-center">
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="checkbox"
-                                    id="use-ocr-toggle"
-                                    checked={useOCR}
-                                    onChange={(e) => setUseOCR(e.target.checked)}
-                                    disabled={isUploading}
-                                    className="h-4 w-4"
-                                />
-                                <label htmlFor="use-ocr-toggle" className="text-sm cursor-pointer">
-                                    OCR-analyse gebruiken
-                                </label>
+                        <div className="flex flex-col gap-3 items-center justify-center">
+                            <div className="flex items-center gap-4 justify-center flex-wrap">
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        id="use-ai-toggle"
+                                        checked={useAI}
+                                        onChange={(e) => setUseAI(e.target.checked)}
+                                        disabled={isUploading}
+                                        className="h-4 w-4"
+                                    />
+                                    <label htmlFor="use-ai-toggle" className="text-sm cursor-pointer">
+                                        AI-analyse gebruiken
+                                    </label>
+                                </div>
+                                {useAI && (
+                                    <Badge variant="outline" className="text-xs text-green-600">
+                                        ✓ AI Analyse
+                                    </Badge>
+                                )}
                             </div>
-                            {useOCR && (
-                                <Badge variant="outline" className="text-xs text-green-600">
-                                    ✓ Gratis
-                                </Badge>
+                            {!useAI && (
+                                <p className="text-xs text-muted-foreground text-center">
+                                    Alleen bestand uploaden zonder analyse. Handmatig invullen via factuurdetails.
+                                </p>
                             )}
                         </div>
-                        {!useOCR && (
-                            <p className="text-xs text-muted-foreground">
-                                Alleen bestand uploaden zonder analyse. Handmatig invullen via factuurdetails.
-                            </p>
-                        )}
                     </div>
                     <div
                         className="flex flex-col items-center justify-center cursor-pointer w-full"
@@ -953,8 +1016,8 @@ export default function PurchasesPage() {
                              <div className="flex items-center">
                                 <UploadCloud className="h-4 w-4 mr-2" />
                                 <p className="text-muted-foreground">
-                                    {useOCR
-                                        ? 'Sleep facturen hierheen of klik om te uploaden (PDF of afbeelding) - OCR analyse ingeschakeld'
+                                    {useAI
+                                        ? 'Sleep facturen hierheen of klik om te uploaden (PDF of afbeelding) - AI analyse ingeschakeld'
                                         : 'Sleep facturen hierheen of klik om te uploaden (PDF of afbeelding) - Handmatige invoer'}
                                 </p>
                             </div>
@@ -1035,9 +1098,9 @@ export default function PurchasesPage() {
                                 filteredInvoices.map((invoice) => {
                                     const supplierId = getSupplierId(invoice);
                                     const isOverdue = invoice.status === 'Verwerkt' && invoice.dueDate && isPast(parseISO(invoice.dueDate));
-                                    // Get OCR result (backwards compatible with aiResult)
-                                    const ocrData = invoice.ocrResult || invoice.aiResult;
-                                    const licensePlates = ocrData?.lines?.map((l: InvoiceLine) => l.licensePlate).filter(Boolean) || [];
+                                    // Get AI result (backwards compatible with ocrResult)
+                                    const aiData = invoice.aiResult || (invoice as any).ocrResult;
+                                    const licensePlates = aiData?.lines?.map((l: InvoiceLine) => l.licensePlate).filter(Boolean) || [];
                                     const uniquePlates = [...new Set(licensePlates)];
 
                                     return (
@@ -1054,16 +1117,16 @@ export default function PurchasesPage() {
                                                     <StatusBadge status={isOverdue ? 'Verlopen' : invoice.status} />
                                                     <div className="flex flex-col">
                                                         <span>{invoice.kenmerk}</span>
-                                                        <span className="text-xs text-muted-foreground">{ocrData?.invoiceNumber || '-'}</span>
+                                                        <span className="text-xs text-muted-foreground">{aiData?.invoiceNumber || '-'}</span>
                                                     </div>
                                                     {invoice.fileDataUri && (
                                                          <TooltipProvider>
                                                             <Tooltip>
                                                                 <TooltipTrigger>
-                                                                     {ocrData?.isDirectDebit ? <Zap className="h-4 w-4 text-blue-500" /> : <Paperclip className="h-4 w-4 text-muted-foreground" />}
+                                                                     {aiData?.isDirectDebit ? <Zap className="h-4 w-4 text-blue-500" /> : <Paperclip className="h-4 w-4 text-muted-foreground" />}
                                                                 </TooltipTrigger>
                                                                 <TooltipContent>
-                                                                    <p>{ocrData?.isDirectDebit ? 'Automatische Incasso' : 'Document heeft bijlage(n)'}</p>
+                                                                    <p>{aiData?.isDirectDebit ? 'Automatische Incasso' : 'Document heeft bijlage(n)'}</p>
                                                                 </TooltipContent>
                                                             </Tooltip>
                                                         </TooltipProvider>
@@ -1076,10 +1139,10 @@ export default function PurchasesPage() {
                                                         <div className="flex items-center gap-2">
                                                             {supplierId ? (
                                                                 <Link href={`/admin/suppliers/${supplierId}`} onClick={(e) => e.stopPropagation()} className="hover:underline text-primary font-semibold">
-                                                                    {invoice.supplierName}
+                                                                    {invoice.supplierName || aiData?.supplierName || '-'}
                                                                 </Link>
                                                             ) : (
-                                                                <span className="font-semibold">{invoice.supplierName}</span>
+                                                                <span className="font-semibold">{invoice.supplierName || aiData?.supplierName || '-'}</span>
                                                             )}
                                                             {!supplierId && (
                                                                 <TooltipProvider>

@@ -49,7 +49,7 @@ export function InvoiceBookingDialog({
     onClose: () => void, 
     invoice: PurchaseInvoice | null, 
     suppliers: Supplier[], 
-    onCreateSupplier: (dataUri: string) => Promise<boolean>,
+    onCreateSupplier: (dataUri: string, invoiceId?: string) => Promise<boolean>,
     vehicles: Vehicle[],
     onPlateChange: (invoiceId: string, lineIndex: number, newPlate: string) => void,
     onInvoicePlateChange?: (invoiceId: string, newPlate: string) => void
@@ -96,9 +96,11 @@ export function InvoiceBookingDialog({
     const handleCreateSupplier = async () => {
         if (!invoice?.fileDataUri) return;
         setIsCreatingSupplier(true);
-        const success = await onCreateSupplier(invoice.fileDataUri);
+        const success = await onCreateSupplier(invoice.fileDataUri, invoice.id);
         if (success) {
             setSupplierExists(true);
+            // Refresh the invoice data by updating it from parent
+            // The parent will refresh via fetchInvoices
         }
         setIsCreatingSupplier(false);
     };
