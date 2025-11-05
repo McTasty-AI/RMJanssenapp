@@ -1,0 +1,51 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+  
+    // Helper function to check for admin role
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Rules for the users collection
+    match /users/{userId} {
+      allow read: if request.auth.uid == userId || isAdmin();
+      allow update: if request.auth.uid == userId || isAdmin(); // Allow users to update their own profile, and admins to update any
+      allow create, delete: if isAdmin(); // Only admins can create or delete users
+    }
+    
+    // Rules for clients - only accessible by admins
+    match /clients/{clientId} {
+      allow read, write: if isAdmin();
+    }
+    
+    // Rules for truckLogs (weekstaten)
+    match /truckLogs/{logId} {
+      // Allow read access if the user is an admin OR the userId in the document matches the logged-in user's UID
+      allow get, list: if isAdmin() || request.auth.uid == resource.data.userId;
+      
+      // Allow create/update if the user is an admin OR the userId in the *new* data matches the logged-in user's UID
+      allow write: if isAdmin() || request.auth.uid == request.resource.data.userId;
+    }
+    
+     // Rules for declarations
+    match /declarations/{declarationId} {
+       allow get, list: if isAdmin() || request.auth.uid == resource.data.userId;
+       allow create: if request.auth.uid == request.resource.data.userId;
+       allow update: if isAdmin(); // Only admins can change status
+       allow delete: if isAdmin();
+    }
+    
+     // Rules for leave requests
+    match /leaveRequests/{leaveId} {
+       allow get, list: if isAdmin() || request.auth.uid == resource.data.userId;
+       allow create: if request.auth.uid == request.resource.data.userId;
+       allow update: if isAdmin(); // Only admins can change status
+       allow delete: if isAdmin();
+    }
+  }
+}
+
+    

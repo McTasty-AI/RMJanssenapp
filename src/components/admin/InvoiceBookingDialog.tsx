@@ -1,0 +1,312 @@
+
+
+"use client";
+
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Separator } from '@/components/ui/separator';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import PdfPreview from '@/components/PdfPreview';
+import type { PurchaseInvoice } from '@/app/admin/purchases/page';
+import { format, parseISO } from 'date-fns';
+import { supabase } from '@/lib/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { Loader2, PlusCircle, CheckCircle, Tag, Truck, Zap } from 'lucide-react';
+import type { Supplier, PurchaseInvoiceCategory, Vehicle } from '@/lib/types';
+import { purchaseInvoiceCategories, purchaseInvoiceCategoryTranslations } from '@/lib/types';
+
+
+const formatCurrency = (value?: number) => {
+    if (value === undefined) return '-';
+    return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(value);
+};
+
+const InfoRow = ({ label, value, children }: { label: string, value?: string, children?: React.ReactNode }) => (
+    <div className="flex justify-between items-center text-sm">
+        <p className="text-muted-foreground">{label}</p>
+        <div className="flex items-center gap-2">
+            <p className="font-medium text-right">{value || '-'}</p>
+            {children}
+        </div>
+    </div>
+);
+
+export function InvoiceBookingDialog({ 
+    isOpen, 
+    onClose, 
+    invoice: initialInvoice, 
+    suppliers,
+    onCreateSupplier,
+    vehicles,
+    onPlateChange,
+    onInvoicePlateChange
+}: { 
+    isOpen: boolean, 
+    onClose: () => void, 
+    invoice: PurchaseInvoice | null, 
+    suppliers: Supplier[], 
+    onCreateSupplier: (dataUri: string) => Promise<boolean>,
+    vehicles: Vehicle[],
+    onPlateChange: (invoiceId: string, lineIndex: number, newPlate: string) => void,
+    onInvoicePlateChange?: (invoiceId: string, newPlate: string) => void
+}) {
+    const { toast } = useToast();
+    const [invoice, setInvoice] = useState(initialInvoice);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [isCreatingSupplier, setIsCreatingSupplier] = useState(false);
+    const [fileBlob, setFileBlob] = useState<File | null>(null);
+    const [supplierExists, setSupplierExists] = useState(false);
+    const [selectedCategory, setSelectedCategory] = useState<PurchaseInvoiceCategory | ''>('');
+
+    const suppliersKvkMap = useMemo(() => new Map(suppliers.filter(s => s.kvkNumber).map(s => [s.kvkNumber!, s.id])), [suppliers]);
+    const suppliersNameMap = useMemo(() => new Map(suppliers.map(s => [s.companyName, s.id])), [suppliers]);
+    
+    useEffect(() => {
+        const getSupplierId = (inv: PurchaseInvoice | null) => {
+            if (inv?.aiResult?.kvkNumber && suppliersKvkMap.has(inv.aiResult.kvkNumber)) {
+                return suppliersKvkMap.get(inv.aiResult.kvkNumber);
+            }
+            if (inv?.supplierName && suppliersNameMap.has(inv.supplierName)) {
+                return suppliersNameMap.get(inv.supplierName);
+            }
+            return undefined;
+        };
+
+        if(isOpen && initialInvoice) {
+             setInvoice(initialInvoice);
+             setSupplierExists(!!getSupplierId(initialInvoice));
+             setSelectedCategory(initialInvoice.category || '');
+        }
+
+        if (isOpen && initialInvoice?.fileDataUri) {
+            fetch(initialInvoice.fileDataUri)
+                .then(res => res.blob())
+                .then(blob => setFileBlob(new File([blob], "invoice.pdf", { type: blob.type })));
+        } else {
+            setFileBlob(null);
+        }
+
+    }, [initialInvoice, isOpen, suppliersKvkMap, suppliersNameMap]);
+
+
+    const handleCreateSupplier = async () => {
+        if (!invoice?.fileDataUri) return;
+        setIsCreatingSupplier(true);
+        const success = await onCreateSupplier(invoice.fileDataUri);
+        if (success) {
+            setSupplierExists(true);
+        }
+        setIsCreatingSupplier(false);
+    };
+
+    const handleCategoryChange = async (newCategory: PurchaseInvoiceCategory) => {
+        if (!invoice || newCategory === invoice.category) return;
+
+        setSelectedCategory(newCategory);
+        try {
+            const { error } = await supabase.from('purchase_invoices').update({ category: newCategory }).eq('id', invoice.id);
+            if (error) throw error;
+            toast({ title: 'Categorie bijgewerkt', description: `De categorie is gewijzigd naar "${purchaseInvoiceCategoryTranslations[newCategory]}".` });
+        } catch (error) {
+            console.error('Error updating category:', error);
+            toast({ variant: 'destructive', title: 'Fout', description: 'Kon de categorie niet bijwerken.' });
+             setSelectedCategory(invoice.category || ''); // revert on failure
+        }
+    };
+    
+    const handleBookInvoice = async () => {
+        if (!invoice) return;
+        if (!selectedCategory) {
+            toast({
+                variant: 'destructive',
+                title: 'Categorie verplicht',
+                description: 'Selecteer een categorie voordat u de factuur inboekt.',
+            });
+            return;
+        }
+
+        setIsProcessing(true);
+        try {
+            // If the invoice is a direct debit, mark it as paid directly. Otherwise, mark as processed.
+            const newStatus = invoice.aiResult?.isDirectDebit ? 'Betaald' : 'Verwerkt';
+            const { error } = await supabase
+              .from('purchase_invoices')
+              .update({ status: newStatus, category: selectedCategory })
+              .eq('id', invoice.id);
+            if (error) throw error;
+
+            toast({
+                title: 'Factuur Verwerkt',
+                description: `De factuur is succesvol ingeboekt en heeft de status "${newStatus}" gekregen.`,
+            });
+            onClose();
+        } catch (error) {
+            console.error("Error booking invoice:", error);
+            toast({
+                variant: 'destructive',
+                title: 'Inboeken mislukt',
+                description: 'Er is een fout opgetreden bij het bijwerken van de factuurstatus.',
+            });
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    if (!invoice) return null;
+    
+    const invoiceDate = invoice.aiResult?.invoiceDate ? format(parseISO(invoice.aiResult.invoiceDate), 'dd-MM-yyyy') : 'N/A';
+    const dueDate = invoice.aiResult?.dueDate ? format(parseISO(invoice.aiResult.dueDate), 'dd-MM-yyyy') : 'N/A';
+    
+    const canBook = supplierExists && invoice.status === 'Nieuw' && !isProcessing && !!selectedCategory;
+
+    return (
+        <Dialog open={isOpen} onOpenChange={onClose}>
+            <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col">
+                <DialogHeader>
+                    <DialogTitle>Factuurdetails</DialogTitle>
+                    <DialogDescription>
+                        Controleer de door de AI geëxtraheerde gegevens, kies een categorie en boek de factuur in.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-6 overflow-hidden">
+                    <div className="space-y-4 overflow-y-auto pr-2">
+                        <div className="p-4 border rounded-lg space-y-3">
+                             <InfoRow label="Leverancier" value={invoice.aiResult?.supplierName}>
+                                {supplierExists ? (
+                                     <Badge variant="success"><CheckCircle className="mr-2 h-4 w-4" /> Herkend</Badge>
+                                ) : (
+                                    <Button size="sm" variant="outline" onClick={handleCreateSupplier} disabled={isCreatingSupplier}>
+                                        {isCreatingSupplier ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <PlusCircle className="mr-2 h-4 w-4" />}
+                                        Aanmaken
+                                    </Button>
+                                )}
+                             </InfoRow>
+                             <InfoRow label="Factuurnummer" value={invoice.aiResult?.invoiceNumber} />
+                             <InfoRow label="Factuurdatum" value={invoiceDate} />
+                             <InfoRow label="Vervaldatum" value={invoice.aiResult?.isDirectDebit ? 'Automatische Incasso' : dueDate} >
+                                {invoice.aiResult?.isDirectDebit && <Zap className="h-4 w-4 text-blue-500" />}
+                             </InfoRow>
+                             <div className="flex justify-between items-center text-sm">
+                                <p className="text-muted-foreground">Kenteken</p>
+                                <Select
+                                    value={invoice.licensePlate || invoice.ocrResult?.lines?.[0]?.licensePlate || '__none__'}
+                                    onValueChange={(newPlate) => {
+                                        if (onInvoicePlateChange) {
+                                            onInvoicePlateChange(invoice.id, newPlate);
+                                        } else {
+                                            // Fallback: use line plate change function
+                                            onPlateChange(invoice.id, 0, newPlate);
+                                        }
+                                    }}
+                                >
+                                    <SelectTrigger className="w-[250px]">
+                                        <div className="flex items-center gap-1.5">
+                                            <Truck className="h-4 w-4"/>
+                                            <SelectValue placeholder="Kies een kenteken..." />
+                                        </div>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="__none__">Geen</SelectItem>
+                                        {vehicles.map(v => (
+                                            <SelectItem key={v.id} value={v.licensePlate}>
+                                                {v.licensePlate}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                             <div className="flex justify-between items-center text-sm">
+                                <p className="text-muted-foreground">Categorie</p>
+                                <Select onValueChange={(value) => handleCategoryChange(value as PurchaseInvoiceCategory)} value={selectedCategory}>
+                                    <SelectTrigger className="w-[250px]">
+                                        <SelectValue placeholder="Kies een categorie..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {purchaseInvoiceCategories.map(cat => (
+                                            <SelectItem key={cat} value={cat}>
+                                                {purchaseInvoiceCategoryTranslations[cat]}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                        
+                        {invoice.aiResult?.lines && invoice.aiResult.lines.length > 0 && (
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Omschrijving</TableHead>
+                                        <TableHead>Kenteken</TableHead>
+                                        <TableHead className="text-right">Totaal</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {invoice.aiResult.lines.map((line: any, index: number) => (
+                                        <TableRow key={index}>
+                                            <TableCell className="text-sm">{line.description}</TableCell>
+                                             <TableCell>
+                                                <Select
+                                                    value={line.licensePlate || '__none__'}
+                                                    onValueChange={(newPlate) => onPlateChange(invoice.id, index, newPlate)}
+                                                    >
+                                                    <SelectTrigger className="h-8 text-xs px-2 w-[150px]">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <Truck className="h-3 w-3"/>
+                                                            <SelectValue placeholder="Koppel..." />
+                                                        </div>
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="__none__">Geen</SelectItem>
+                                                        {vehicles.map(v => <SelectItem key={v.id} value={v.licensePlate}>{v.licensePlate}</SelectItem>)}
+                                                    </SelectContent>
+                                                </Select>
+                                            </TableCell>
+                                            <TableCell className="text-right text-sm font-mono">{formatCurrency(line.total)}</TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        )}
+                        
+                        <Separator />
+
+                        <div className="space-y-2">
+                            <InfoRow label="Subtotaal" value={formatCurrency(invoice.aiResult?.subTotal)} />
+                            <InfoRow label="BTW" value={formatCurrency(invoice.aiResult?.vatTotal)} />
+                            <div className="flex justify-between text-base font-bold pt-2">
+                                <p>Totaalbedrag</p>
+                                <p>{formatCurrency(invoice.grandTotal)}</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="bg-muted rounded-lg flex items-center justify-center overflow-auto p-4">
+                        {fileBlob ? (
+                            <PdfPreview file={fileBlob} />
+                        ) : (
+                            <Skeleton className="h-full w-full" />
+                        )}
+                    </div>
+                </div>
+
+                <DialogFooter>
+                    <DialogClose asChild>
+                        <Button variant="ghost">Sluiten</Button>
+                    </DialogClose>
+                    {invoice.status === 'Nieuw' && (
+                         <Button onClick={handleBookInvoice} disabled={!canBook}>
+                            {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                            Factuur Inboeken
+                        </Button>
+                    )}
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}

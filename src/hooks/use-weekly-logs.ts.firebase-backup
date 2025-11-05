@@ -1,0 +1,341 @@
+
+
+"use client";
+
+import { useState, useEffect, useCallback } from 'react';
+import type { WeeklyLog, DailyLog, DayStatus, User, LeaveRequest, WeeklyLogStatus, Customer, Invoice, InvoiceLine, WeekDay } from '@/lib/types';
+import { getYear, startOfWeek, addDays, format, getMonth, getISOWeek, getDay, isSameDay, parseISO, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
+import { nl } from 'date-fns/locale';
+import { holidays } from '@/lib/holidays';
+import { useAuth } from './use-auth';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, doc, setDoc, onSnapshot, updateDoc, getDoc, addDoc } from 'firebase/firestore';
+import { useToast } from './use-toast';
+import { generateInvoiceData } from '@/ai/flows/generate-invoice-flow';
+
+const LOGS_COLLECTION = 'truckLogs';
+const LEAVE_COLLECTION = 'leaveRequests';
+
+// This function is now only used on the admin side for generation
+const generateEmptyWeek = (date: Date, user: User): DailyLog[] => {
+  const weekStart = startOfWeek(date, { weekStartsOn: 1 });
+  const newDays = Array.from({ length: 7 }).map((_, i) => {
+    const dayDate = addDays(weekStart, i);
+    const dayOfWeek = getDay(dayDate);
+    const dayName = format(dayDate, 'EEEE', { locale: nl }).toLowerCase() as WeekDay | 'zaterdag' | 'zondag';
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const isHoliday = holidays.some(h => isSameDay(h.date, dayDate));
+    
+    let status: DayStatus = 'gewerkt';
+    if (isHoliday) {
+      status = 'feestdag';
+    } else if (isWeekend) {
+      status = 'weekend';
+    } else if (user.workDays && user.workDays.length > 0 && !user.workDays.includes(dayName as WeekDay)) {
+        status = 'onbetaald';
+    }
+
+    return {
+      date: dayDate.toISOString(),
+      day: format(dayDate, 'EEEE', { locale: nl }).toLowerCase(),
+      status: status,
+      startTime: { hour: 0, minute: 0 },
+      endTime: { hour: 0, minute: 0 },
+      breakTime: { hour: 0, minute: 0 },
+      startMileage: 0,
+      endMileage: 0,
+      toll: 'Geen',
+      licensePlate: undefined,
+      overnightStay: false,
+      tripNumber: '',
+    };
+  });
+
+  if (user.assignedLicensePlates && user.assignedLicensePlates.length === 1) {
+    newDays.forEach(day => {
+        if (day.status === 'gewerkt') {
+            day.licensePlate = user.assignedLicensePlates![0];
+        }
+    });
+  }
+  return newDays;
+};
+
+export const calculateWorkHours = (day: DailyLog): number => {
+    if (!day || day.status !== 'gewerkt' || !day.startTime || !day.endTime) return 0;
+    const startMinutes = (day.startTime?.hour || 0) * 60 + (day.startTime?.minute || 0);
+    const endMinutes = (day.endTime?.hour || 0) * 60 + (day.endTime?.minute || 0);
+    const breakMinutes = (day.breakTime?.hour || 0) * 60 + (day.breakTime?.minute || 0);
+    if (endMinutes <= startMinutes) return 0;
+    const workMinutes = endMinutes - startMinutes - breakMinutes;
+    return Math.max(0, workMinutes) / 60;
+};
+
+const cleanLogForFirestore = (log: WeeklyLog): WeeklyLog => {
+    const cleanedLog = JSON.parse(JSON.stringify(log));
+    
+    // Ensure weekId and userId are always present and correct.
+    cleanedLog.weekId = log.weekId;
+    cleanedLog.userId = log.userId;
+
+    cleanedLog.remarks = cleanedLog.remarks || '';
+    cleanedLog.submittedAt = cleanedLog.submittedAt || null;
+    cleanedLog.status = cleanedLog.status || 'concept';
+    
+    const weekStartDate = parseISO(log.days[0].date);
+    cleanedLog.yearMonth = format(weekStartDate, 'yyyy-MM');
+    
+    cleanedLog.days = cleanedLog.days.map((day: any) => {
+        const cleanedDay = { ...day };
+        cleanedDay.licensePlate = cleanedDay.licensePlate || '';
+        cleanedDay.overnightStay = cleanedDay.overnightStay || false;
+        cleanedDay.tripNumber = cleanedDay.tripNumber || '';
+        cleanedDay.startMileage = Number(cleanedDay.startMileage) || 0;
+        cleanedDay.endMileage = Number(cleanedDay.endMileage) || 0;
+        delete cleanedDay.kilometers; // Remove old field if present
+        return cleanedDay;
+    });
+    return cleanedLog;
+};
+
+export const useWeeklyLogs = (currentDate?: Date) => {
+  const { user, isLoaded: authIsLoaded } = useAuth();
+  const [weekData, setWeekData] = useState<WeeklyLog | null>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (!authIsLoaded) return;
+    
+    if (!user || !currentDate) {
+      setIsLoaded(true);
+      setWeekData(null);
+      return;
+    }
+
+    const year = getYear(currentDate);
+    const week = getISOWeek(currentDate);
+    const weekId = `${year}-${week}`;
+    
+    setIsLoaded(false);
+
+    const q = query(
+      collection(db, LOGS_COLLECTION),
+      where("weekId", "==", weekId),
+      where("userId", "==", user.uid)
+    );
+
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      if (snapshot.empty) {
+        
+        const finalDays = generateEmptyWeek(currentDate, user);
+
+        setWeekData({
+          weekId: weekId,
+          userId: user.uid,
+          days: finalDays,
+          status: 'concept',
+          remarks: ''
+        });
+
+      } else {
+        const logData = snapshot.docs[0].data() as WeeklyLog;
+        setWeekData(logData);
+      }
+      setIsLoaded(true);
+    }, (error) => {
+        console.error("[useWeeklyLogs Snapshot ERROR] Error for query:", error);
+        setIsLoaded(true);
+    });
+    
+    return () => unsubscribe();
+  }, [currentDate, user, authIsLoaded]);
+
+
+  const saveLog = useCallback(async (data: WeeklyLog, newStatus: WeeklyLogStatus): Promise<void> => {
+    if (!user) {
+        console.error("[saveLog] Save attempted without a user.");
+        return;
+    }
+
+    const docId = `${data.weekId}_${user.uid}`;
+    const docRef = doc(db, LOGS_COLLECTION, docId);
+
+    // If trying to submit, first check the current status in DB to prevent race conditions
+    if (newStatus === 'pending') {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const currentStatus = docSnap.data().status;
+            if (currentStatus === 'pending' || currentStatus === 'approved') {
+                toast({
+                    variant: 'destructive',
+                    title: 'Indienen Mislukt',
+                    description: 'Deze weekstaat is al ingediend of goedgekeurd.'
+                });
+                return; // Stop the save process
+            }
+        }
+    }
+    
+    const finalLogData: WeeklyLog = {
+        ...data,
+        userId: user.uid,
+        status: newStatus,
+    };
+    
+    if (newStatus === 'pending' && data.status !== 'pending') {
+        finalLogData.submittedAt = new Date().toISOString();
+    }
+    
+    const cleanedData = cleanLogForFirestore(finalLogData);
+    await setDoc(docRef, cleanedData, { merge: true });
+  }, [user, toast]);
+  
+  const unlockLog = useCallback(async (weekId: string, driverUid: string) => {
+    if (!user || user.role !== 'admin' || !driverUid) return;
+    const docRef = doc(db, LOGS_COLLECTION, `${weekId}_${driverUid}`);
+    await updateDoc(docRef, { status: 'concept' });
+  }, [user]);
+
+  const approveLog = useCallback(async (log: WeeklyLog): Promise<void> => {
+    if (!user || user.role !== 'admin' || !log.userId) return;
+    const docRef = doc(db, LOGS_COLLECTION, `${log.weekId}_${log.userId}`);
+    await updateDoc(docRef, { status: 'approved' });
+
+    try {
+        const plateCounts: Record<string, number> = {};
+        log.days.forEach(day => {
+            if (day.licensePlate) {
+                plateCounts[day.licensePlate] = (plateCounts[day.licensePlate] || 0) + 1;
+            }
+        });
+
+        if (Object.keys(plateCounts).length === 0) {
+            toast({ variant: 'destructive', title: 'Conceptfactuur Mislukt', description: 'Geen kenteken gevonden in weekstaat.' });
+            return;
+        }
+        
+        const mainLicensePlate = Object.keys(plateCounts).reduce((a, b) => plateCounts[a] > plateCounts[b] ? a : b);
+
+        const customersQuery = query(collection(db, "customers"), where("assignedLicensePlates", "array-contains", mainLicensePlate));
+        const customersSnapshot = await getDocs(customersQuery);
+
+        if (customersSnapshot.empty) {
+            toast({ variant: 'destructive', title: 'Conceptfactuur Mislukt', description: `Geen klant gevonden voor kenteken ${mainLicensePlate}.` });
+            return;
+        }
+        
+        const customer = { id: customersSnapshot.docs[0].id, ...customersSnapshot.docs[0].data() } as Customer;
+        
+        let weeklyRate: number | undefined = undefined;
+        if (customer.mileageRateType === 'dot' || customer.mileageRateType === 'variable') {
+            const ratesDocRef = doc(db, 'weeklyRates', log.weekId);
+            const ratesSnap = await getDoc(ratesDocRef);
+            if (ratesSnap.exists()) {
+                const allRates = ratesSnap.data().customerRates;
+                if (allRates && allRates[customer.id]) {
+                    weeklyRate = allRates[customer.id];
+                } else {
+                     console.warn(`Weekly rate for customer ${customer.companyName} not found for week ${log.weekId}.`);
+                     toast({ variant: 'destructive', title: 'Tarief niet gevonden', description: `Wekelijks tarief voor ${customer.companyName} in week ${log.weekId.split('-')[1]} is niet ingevuld. Basistarief wordt gebruikt.`});
+                }
+            } else {
+                 console.warn(`Weekly rates document for week ${log.weekId} does not exist.`);
+                 toast({ variant: 'destructive', title: 'Tarieven niet gevonden', description: `Weekstaat met tarieven voor week ${log.weekId.split('-')[1]} is niet gevonden. Basistarief wordt gebruikt.`});
+            }
+        }
+        
+        const invoiceData = await generateInvoiceData(log, customer, weeklyRate);
+        
+        // Add toll lines after AI generation
+        const allLines: Omit<InvoiceLine, 'total'>[] = [...invoiceData.lines];
+        log.days.forEach(day => {
+            if (day.toll !== 'Geen') {
+                const dayName = format(parseISO(day.date), 'EEEE dd-MM-yyyy', { locale: nl });
+                if (day.toll === 'BE' || day.toll === 'BE/DE') {
+                    allLines.push({
+                        quantity: 0,
+                        description: `${dayName}\nTol België`,
+                        unitPrice: 0,
+                        vatRate: 21,
+                    });
+                }
+                if (day.toll === 'DE' || day.toll === 'BE/DE') {
+                        allLines.push({
+                        quantity: 0,
+                        description: `${dayName}\nTol Duitsland`,
+                        unitPrice: 0,
+                        vatRate: 21,
+                    });
+                }
+            }
+        });
+        
+        // Sort lines by date
+        const getDateFromDescription = (desc: string): Date => {
+            const match = desc.match(/\d{2}-\d{2}-\d{4}/);
+            if (!match) return new Date(0); // Fallback for sort stability
+            const [day, month, year] = match[0].split('-');
+            return new Date(`${year}-${month}-${day}`);
+        };
+
+        allLines.sort((a, b) => {
+            const dateA = getDateFromDescription(a.description);
+            const dateB = getDateFromDescription(b.description);
+            return dateA.getTime() - dateB.getTime();
+        });
+
+
+        const { subTotal, vatTotal, grandTotal } = allLines.reduce((acc, line) => {
+            const lineTotal = line.quantity * line.unitPrice;
+            const vatAmount = lineTotal * (line.vatRate / 100);
+            acc.subTotal += lineTotal;
+            acc.vatTotal += vatAmount;
+            acc.grandTotal = acc.subTotal + acc.vatTotal;
+            return acc;
+        }, { subTotal: 0, vatTotal: 0, grandTotal: 0 });
+        
+        const [year, weekNumber] = log.weekId.split('-');
+        
+        const newInvoice: Omit<Invoice, 'id'> = {
+            invoiceNumber: '',
+            status: 'concept',
+            customer: {
+                companyName: customer.companyName,
+                kvkNumber: customer.kvkNumber,
+                street: customer.street,
+                houseNumber: customer.houseNumber,
+                postalCode: customer.postalCode,
+                city: customer.city,
+            },
+            invoiceDate: new Date().toISOString(),
+            dueDate: addDays(new Date(), customer.paymentTerm || 30).toISOString(),
+            reference: `Week ${weekNumber} - ${year} (${mainLicensePlate})`,
+            lines: allLines.map(l => ({ ...l, total: l.quantity * l.unitPrice })),
+            subTotal,
+            vatTotal,
+            grandTotal,
+            createdAt: new Date().toISOString(),
+            footerText: 'We verzoeken u vriendelijk het bovenstaande bedrag voor de vervaldatum te voldoen op onze bankrekening onder vermelding van het factuurnummer.',
+            showDailyTotals: customer.showDailyTotals ?? false,
+            showWeeklyTotals: customer.showWeeklyTotals ?? false,
+        };
+
+        await addDoc(collection(db, 'invoices'), newInvoice);
+        
+        toast({ title: 'Conceptfactuur Aangemaakt', description: `Nieuwe conceptfactuur voor klant: ${customer.companyName}` });
+
+    } catch (error: any) {
+        console.error("Error creating draft invoice:", error);
+        toast({ variant: 'destructive', title: 'Fout bij aanmaken conceptfactuur', description: `De AI-service kon de factuur niet genereren. Details: ${error.message}` });
+    }
+  }, [user, toast]);
+  
+  const updateUserPlates = useCallback(async (uid: string, plates: string[]): Promise<void> => {
+    if (!user || user.role !== 'admin' || !uid) return;
+    const userDocRef = doc(db, 'users', uid);
+    await updateDoc(userDocRef, { assignedLicensePlates: plates });
+  }, [user]);
+
+  return { isLoaded, weekData, saveLog, unlockLog, approveLog, updateUserPlates };
+};
