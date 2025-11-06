@@ -94,51 +94,66 @@ export default function Header() {
   const totalPending = pendingWeekstates + pendingDeclarations + pendingLeaveRequests;
 
   return (
-    <header className="bg-card border-b shadow-sm">
-      <div className="container mx-auto flex h-auto min-h-20 flex-wrap items-center justify-between py-2 px-4 md:px-6">
-        <Link href="/dashboard">
-          <HorizontalLogo />
-        </Link>
-        <nav className="flex items-center gap-x-2 flex-wrap justify-end">
-             <NavButton href="/dashboard" currentPath={pathname}>
-                <Home className="mr-2 h-4 w-4" /> Home
+    <header className="bg-card border-b shadow-sm sticky top-0 z-50">
+      <div className="container mx-auto">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4 py-3 md:py-2 px-4 md:px-6">
+          {/* Logo */}
+          <div className="flex-shrink-0">
+            <Link href="/dashboard">
+              <HorizontalLogo />
+            </Link>
+          </div>
+
+          {/* Main Navigation */}
+          <nav className="flex items-center gap-1 md:gap-2 flex-wrap md:flex-nowrap justify-center md:justify-start flex-1 md:flex-none">
+            <NavButton href="/dashboard" currentPath={pathname}>
+              <Home className="mr-1.5 md:mr-2 h-4 w-4" /> 
+              <span className="hidden sm:inline">Home</span>
             </NavButton>
             <NavButton href="/timesheets" currentPath={pathname}>
-                <CalendarClock className="mr-2 h-4 w-4" /> Uren
+              <CalendarClock className="mr-1.5 md:mr-2 h-4 w-4" /> 
+              <span>Uren</span>
             </NavButton>
             <NavButton href="/leave" currentPath={pathname}>
-                <CalendarOff className="mr-2 h-4 w-4" /> Verlof
+              <CalendarOff className="mr-1.5 md:mr-2 h-4 w-4" /> 
+              <span>Verlof</span>
             </NavButton>
-             <NavButton href="/declarations" currentPath={pathname}>
-                <Coins className="mr-2 h-4 w-4" /> Declaraties
+            <NavButton href="/declarations" currentPath={pathname}>
+              <Coins className="mr-1.5 md:mr-2 h-4 w-4" /> 
+              <span>Declaraties</span>
             </NavButton>
-             <NavButton href="/fines" currentPath={pathname}>
-                <Receipt className="mr-2 h-4 w-4" /> Boetes
+            <NavButton href="/fines" currentPath={pathname}>
+              <Receipt className="mr-1.5 md:mr-2 h-4 w-4" /> 
+              <span>Boetes</span>
             </NavButton>
-             <NavButton href="/schade" currentPath={pathname}>
-                <ShieldAlert className="mr-2 h-4 w-4" /> Schade Melden
+            <NavButton href="/schade" currentPath={pathname}>
+              <ShieldAlert className="mr-1.5 md:mr-2 h-4 w-4" /> 
+              <span className="hidden sm:inline">Schade</span>
+              <span className="sm:hidden">Schade</span>
             </NavButton>
+          </nav>
 
-            <div className="w-px h-6 bg-border mx-2 hidden md:block"></div>
-            
+          {/* Right Side Actions */}
+          <div className="flex items-center gap-2 justify-end flex-shrink-0">
             {user?.role === 'admin' && (
-                <Button variant="outline" asChild>
-                    <Link href="/admin" className="relative">
-                        <Shield className="mr-2 h-4 w-4" />
-                        Admin
-                        {totalPending > 0 && (
-                            <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-1 text-xs rounded-full">
-                                {totalPending}
-                            </Badge>
-                        )}
-                    </Link>
-                </Button>
+              <Button variant="outline" size="sm" asChild className="relative">
+                <Link href="/admin">
+                  <Shield className="mr-1.5 md:mr-2 h-4 w-4" />
+                  <span className="hidden sm:inline">Admin</span>
+                  {totalPending > 0 && (
+                    <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-1 text-xs rounded-full">
+                      {totalPending}
+                    </Badge>
+                  )}
+                </Link>
+              </Button>
             )}
-            <Button variant="ghost" onClick={handleLogout}>
-                <LogOut className="mr-2 h-4 w-4" />
-                Uitloggen
+            <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-1.5 md:gap-2">
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Uitloggen</span>
             </Button>
-        </nav>
+          </div>
+        </div>
       </div>
     </header>
   );
