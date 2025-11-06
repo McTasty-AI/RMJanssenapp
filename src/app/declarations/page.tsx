@@ -46,7 +46,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/lib/supabase/client';
-import DebugConsole from '@/components/DebugConsole';
 import { createDeclaration } from '@/lib/data/declarations';
 
 
