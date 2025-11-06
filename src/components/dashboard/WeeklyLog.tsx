@@ -728,19 +728,19 @@ export function WeeklyLogForm({
                     <Table className="min-w-full">
                         <TableHeader>
                             <TableRow>
-                                <TableHead className="w-[90px] min-w-[90px] px-2 text-xs">Dag</TableHead>
-                                <TableHead className="w-[130px] min-w-[130px] px-2 text-xs">Status</TableHead>
-                                <TableHead className="w-[130px] min-w-[130px] px-2 text-xs">Kenteken</TableHead>
-                                <TableHead className="w-[60px] min-w-[60px] px-2 text-xs">Ritnr</TableHead>
-                                <TableHead className="w-[100px] min-w-[100px] px-2 text-xs">Start</TableHead>
-                                <TableHead className="w-[100px] min-w-[100px] px-2 text-xs">Eind</TableHead>
-                                <TableHead className="w-[80px] min-w-[80px] px-2 text-xs">Pauze</TableHead>
-                                <TableHead className="w-[55px] min-w-[55px] px-2 text-xs">Uren</TableHead>
-                                <TableHead className="w-[80px] min-w-[80px] px-2 text-xs">Beginstand</TableHead>
-                                <TableHead className="w-[80px] min-w-[80px] px-2 text-xs">Eindstand</TableHead>
-                                <TableHead className="w-[75px] min-w-[75px] px-2 text-xs">Totaal KM</TableHead>
-                                <TableHead className="w-[90px] min-w-[90px] px-2 text-xs">Tol</TableHead>
-                                <TableHead className="w-[90px] min-w-[90px] px-2 text-xs">Overnachting</TableHead>
+                                <TableHead className="w-[100px] min-w-[100px] px-2 text-xs">Dag</TableHead>
+                                <TableHead className="w-[120px] min-w-[120px] px-2 text-xs">Status</TableHead>
+                                <TableHead className="w-[120px] min-w-[120px] px-2 text-xs">Kenteken</TableHead>
+                                <TableHead className="w-[65px] min-w-[65px] px-2 text-xs">Ritnr</TableHead>
+                                <TableHead className="w-[95px] min-w-[95px] px-2 text-xs">Start</TableHead>
+                                <TableHead className="w-[95px] min-w-[95px] px-2 text-xs">Eind</TableHead>
+                                <TableHead className="w-[75px] min-w-[75px] px-2 text-xs">Pauze</TableHead>
+                                <TableHead className="w-[70px] min-w-[70px] px-2 text-xs">Uren</TableHead>
+                                <TableHead className="w-[85px] min-w-[85px] px-2 text-xs">Beginstand</TableHead>
+                                <TableHead className="w-[85px] min-w-[85px] px-2 text-xs">Eindstand</TableHead>
+                                <TableHead className="w-[85px] min-w-[85px] px-2 text-xs">Totaal KM</TableHead>
+                                <TableHead className="w-[80px] min-w-[80px] px-2 text-xs">Tol</TableHead>
+                                <TableHead className="w-[100px] min-w-[100px] px-2 text-xs">Overnachting</TableHead>
                             </TableRow>
                         </TableHeader>
                     <TableBody>
@@ -817,7 +817,7 @@ export function WeeklyLogForm({
                                 render={({ field: inputField }) => (
                                     <FormItem>
                                     <FormControl>
-                                        <Input type="text" {...inputField} value={inputField.value || ''} disabled={!isWorkDay || !formIsEditable} className="w-[60px] h-9 text-xs" />
+                                        <Input type="text" {...inputField} value={inputField.value || ''} disabled={!isWorkDay || !formIsEditable} className="w-full max-w-[65px] h-9 text-xs" />
                                     </FormControl>
                                     <FormMessage />
                                     </FormItem>
@@ -837,7 +837,7 @@ export function WeeklyLogForm({
                                 render={({ field: inputField, fieldState }) => (
                                     <FormItem>
                                     <FormControl>
-                                        <Input type="number" {...inputField} onChange={e => inputField.onChange(e.target.value === '' ? '' : Number(e.target.value))} value={inputField.value || ''} disabled={!isWorkDay || !formIsEditable} className="w-[70px] h-9 text-xs" />
+                                        <Input type="number" {...inputField} onChange={e => inputField.onChange(e.target.value === '' ? '' : Number(e.target.value))} value={inputField.value || ''} disabled={!isWorkDay || !formIsEditable} className="w-full max-w-[85px] h-9 text-xs" />
                                     </FormControl>
                                     <FormMessage />
                                     </FormItem>
@@ -851,7 +851,7 @@ export function WeeklyLogForm({
                                 render={({ field: inputField, fieldState }) => (
                                     <FormItem>
                                     <FormControl>
-                                        <Input type="number" {...inputField} onChange={e => handleEndMileageChange(index, e.target.value)} value={inputField.value || ''} disabled={!isWorkDay || !formIsEditable} className="w-[70px] h-9 text-xs" />
+                                        <Input type="number" {...inputField} onChange={e => handleEndMileageChange(index, e.target.value)} value={inputField.value || ''} disabled={!isWorkDay || !formIsEditable} className="w-full max-w-[85px] h-9 text-xs" />
                                     </FormControl>
                                     <FormMessage />
                                     </FormItem>
