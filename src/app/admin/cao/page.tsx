@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { pdfjs } from 'react-pdf';
+import { pdfjs } from '@/lib/pdfjs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,9 +11,6 @@ import { ArrowLeft, Loader2, UploadCloud, Bot } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { analyzeCaoDocument } from '@/ai/flows/analyze-cao-document-flow';
-
-// ✅ correcte ESM-import voor Next.js 15 - gebruik CDN voor compatibiliteit met build
-pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version || '3.11.174'}/pdf.worker.min.mjs`;
 
 export default function AdminCaoPage() {
     const router = useRouter();

@@ -13,6 +13,9 @@
         "db:apply": "node scripts/run-supabase-sql.js",
         "admin:create": "node scripts/create-admin-user.mjs"
     },
+    "engines": {
+        "node": "20.x"
+    },
     "dependencies": {
         "@fontsource/inter": "^5.2.8",
         "@genkit-ai/googleai": "^1.14.1",

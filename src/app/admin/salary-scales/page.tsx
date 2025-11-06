@@ -9,14 +9,11 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, UploadCloud, Bot, FileText, Check, ArrowRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { pdfjs } from 'react-pdf';
+import { pdfjs } from '@/lib/pdfjs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { analyzeFunctieloonschaalDocument, type AnalyzeFunctieloonschaalDocumentOutput } from '@/ai/flows/analyze-functieloonschaal-document-flow';
-
-// ✅ correcte ESM-import voor Next.js 15 - gebruik CDN voor compatibiliteit met build
-pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version || '3.11.174'}/pdf.worker.min.mjs`;
 
 const formatCurrency = (value: number) => `€ ${value.toFixed(2)}`;
 
