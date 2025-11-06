@@ -10,7 +10,7 @@ export default {
   theme: {
     container: {
       center: true,
-      padding: "2rem",
+      padding: "0",
       screens: {
         "2xl": "1800px",  // Verhoogd van 1400px naar 1800px voor bredere containers
       },
