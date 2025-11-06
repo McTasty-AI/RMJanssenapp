@@ -2,8 +2,9 @@
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  // External packages that should not be bundled
-  serverExternalPackages: ['pdfjs-dist', 'react-pdf'],
+  experimental: {
+    esmExternals: "loose", // <– laat ESM-packages zoals pdfjs toe
+  },
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -26,15 +27,9 @@ const nextConfig: NextConfig = {
         fs: false,
       };
     }
-    // Configure webpack to handle pdf.worker.min.mjs as asset/source
-    config.module.rules.push({
-      test: /pdf\.worker\.min\.mjs$/,
-      type: "asset/source",
-    });
+    // ✅ Voorkom dat Next blokkeert op ESM worker
+    config.externals = [...(config.externals || []), "pdfjs-dist/build/pdf.worker.min.mjs"];
     return config;
-  },
-  experimental: {
-    esmExternals: "loose",
   },
   // Turbopack configuration for development builds
   turbopack: {
