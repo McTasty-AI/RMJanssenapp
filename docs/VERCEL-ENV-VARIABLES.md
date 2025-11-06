@@ -77,6 +77,22 @@
 - ✅ Beperk je Google Maps API key met HTTP referrers (domains) in Google Cloud Console
 - ✅ Gebruik environment-specifieke keys waar mogelijk (development vs production)
 
+## ⚠️ Belangrijk: API Keys Security
+
+**Lees de uitgebreide security guide**: [`docs/API-KEYS-SECURITY.md`](./API-KEYS-SECURITY.md)
+
+Deze guide bevat:
+- Stap-voor-stap instructies voor het beveiligen van Google Maps API keys
+- Instellingen voor API restrictions en application restrictions
+- Best practices voor alle publieke API keys
+- Monitoring en alerting configuratie
+- Troubleshooting tips
+
+**Vooral belangrijk voor Google Maps API keys**:
+- Stel **API Restrictions** in (alleen Maps, Places, Directions APIs)
+- Stel **HTTP Referrer Restrictions** in (alleen jouw domeinen)
+- Test restricties na het instellen
+
 ## Testen na Deployment
 
 Na het instellen van alle environment variables, test:
