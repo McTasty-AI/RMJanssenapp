@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/hooks/use-auth';
-import DebugConsole from '@/components/DebugConsole';
 
 export default function EditInvoiceLayout({
   children,
@@ -41,7 +40,6 @@ export default function EditInvoiceLayout({
   return (
     <div className="min-h-screen flex flex-col">
       <main className="flex-1">{children}</main>
-      {user?.role === 'admin' && <DebugConsole />}
     </div>
   );
 }

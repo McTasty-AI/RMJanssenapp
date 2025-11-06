@@ -3,7 +3,6 @@
 
 import Header from '@/components/Header';
 import { useAuth } from '@/hooks/use-auth';
-import DebugConsole from '@/components/DebugConsole';
 import { useRouter } from 'next/navigation';
 import { useEffect, useCallback } from 'react';
 
@@ -40,7 +39,6 @@ export default function DeclarationsLayout({
           children
         )}
       </main>
-      {user?.role === 'admin' && <DebugConsole />}
     </div>
   );
 }

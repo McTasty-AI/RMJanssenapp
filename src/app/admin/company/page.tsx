@@ -15,7 +15,6 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Save, UploadCloud, Trash2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import DebugConsole from '@/components/DebugConsole';
 
 export default function AdminCompanyPage() {
     const [loading, setLoading] = useState(true);
@@ -289,7 +288,6 @@ export default function AdminCompanyPage() {
                     </form>
                 </Form>
             </div>
-            <DebugConsole/>
         </div>
     );
 }
