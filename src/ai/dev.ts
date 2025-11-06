@@ -5,9 +5,7 @@ import './flows/generate-invoice-flow';
 import './flows/analyze-rate-document-flow';
 import './flows/analyze-supplier-invoice-flow';
 import './flows/analyze-purchase-invoice-flow';
-import './flows/analyze-functieloonschaal-document-flow';
 import './flows/calculate-distance-flow';
-import './flows/analyze-cao-document-flow';
 
 
     

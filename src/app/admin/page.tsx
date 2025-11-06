@@ -6,7 +6,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/ca
 import { useAuth } from '@/hooks/use-auth';
 import { supabase } from '@/lib/supabase/client';
 import { getYear, getISOWeek } from 'date-fns';
-import { Users, FileClock, FileCheck2, CalendarOff, Receipt, Building, BarChart3, Truck, BookText, FileText, DollarSign, Briefcase, TrendingUp, Building2, Landmark, ArrowDown, ArrowUp, Calculator, AreaChart, ShieldAlert, Scale } from 'lucide-react';
+import { Users, FileClock, FileCheck2, CalendarOff, Receipt, Building, BarChart3, Truck, BookText, DollarSign, Briefcase, TrendingUp, Building2, Landmark, ArrowDown, ArrowUp, Calculator, AreaChart, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
@@ -225,19 +225,6 @@ export default function AdminPage() {
                 icon={Receipt}
                 title="Boetebeheer"
                 description="Voeg boetes voor chauffeurs toe."
-                />
-                 <AdminCard 
-                    href="/admin/salary-scales"
-                    icon={Scale}
-                    title="Functieloonschalen"
-                    description="Bekijk de huidige functieloonschalen."
-                />
-                 <AdminCard
-                    href="/admin/cao"
-                    icon={FileText}
-                    title="CAO Analyse"
-                    description="Upload en analyseer CAO-documenten."
-                    disabled={true}
                 />
             </DashboardSection>
 
