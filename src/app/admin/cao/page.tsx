@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import * as pdfjs from 'pdfjs-dist';
+import { pdfjs } from 'react-pdf';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,9 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { analyzeCaoDocument } from '@/ai/flows/analyze-cao-document-flow';
 
+// ✅ correcte ESM-import voor Next.js 15 - gebruik CDN voor compatibiliteit met build
+pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version || '3.11.174'}/pdf.worker.min.mjs`;
+
 export default function AdminCaoPage() {
     const router = useRouter();
     const [documentContent, setDocumentContent] = useState<string | null>(null);
@@ -20,20 +23,6 @@ export default function AdminCaoPage() {
     const [answer, setAnswer] = useState<string>('');
     const [isProcessing, setIsProcessing] = useState(false);
     const { toast } = useToast();
-
-    // Set up the worker for pdf.js at runtime to avoid webpack import detection
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            // Use import.meta.url at runtime - webpack won't detect this pattern
-            try {
-                const workerPath = 'pdfjs-dist/build/pdf.worker.min.mjs';
-                pdfjs.GlobalWorkerOptions.workerSrc = new URL(workerPath, import.meta.url).toString();
-            } catch (e) {
-                // Fallback to CDN if import.meta.url fails (pdfjs-dist 3.11.174)
-                pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.mjs';
-            }
-        }
-    }, []);
 
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
