@@ -29,12 +29,32 @@ export default function LoginPage() {
   const { user, isLoaded } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
 
-  // Redirect to dashboard if already logged in
+  // Redirect to dashboard if already logged in (only after verifying session)
   useEffect(() => {
-    if (isLoaded && user) {
-      router.replace('/dashboard');
-    }
+    const checkSession = async () => {
+      if (!isLoaded) {
+        // Still loading, keep checking state
+        return;
+      }
+      
+      // Wait a bit to ensure auth state is fully loaded
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Verify session is actually valid
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session && user) {
+        // Only redirect if we have both a valid session AND a user profile
+        router.replace('/dashboard');
+      } else {
+        // No valid session or user, show login form
+        setIsCheckingSession(false);
+      }
+    };
+    
+    checkSession();
   }, [isLoaded, user, router]);
 
   const form = useForm<LoginFormData>({
@@ -102,6 +122,19 @@ export default function LoginPage() {
       // Always re-enable the button after a short delay to let navigation happen
       setTimeout(() => setIsSubmitting(false), 300);
     }
+  }
+
+  // Show loading state while checking session
+  if (isCheckingSession && isLoaded) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <Card className="w-full max-w-sm">
+          <CardContent className="p-6 text-center">
+            <p className="text-muted-foreground">Sessie controleren...</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (
