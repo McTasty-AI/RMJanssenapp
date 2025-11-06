@@ -19,14 +19,23 @@ import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import Logo from "@/components/Logo";
 import { supabase } from '@/lib/supabase/client';
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Eye, EyeOff } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 
 export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { user, isLoaded } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Redirect to dashboard if already logged in
+  useEffect(() => {
+    if (isLoaded && user) {
+      router.replace('/dashboard');
+    }
+  }, [isLoaded, user, router]);
 
   const form = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
