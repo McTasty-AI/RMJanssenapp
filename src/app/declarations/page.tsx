@@ -213,22 +213,22 @@ export default function DeclarationsPage() {
   }, [declarationStatusByDate]);
 
   return (
-    <div className="space-y-8">
-        <div className="flex justify-between items-center">
+    <div className="space-y-6 sm:space-y-8">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
             <div>
-                <h1 className="text-3xl font-bold">Mijn Declaraties</h1>
-                <p className="text-muted-foreground">Dien nieuwe declaraties in en beheer uw overzicht.</p>
+                <h1 className="text-2xl sm:text-3xl font-bold">Mijn Declaraties</h1>
+                <p className="text-sm sm:text-base text-muted-foreground">Dien nieuwe declaraties in en beheer uw overzicht.</p>
             </div>
-            <Button onClick={() => handleOpenDialog()}>
+            <Button onClick={() => handleOpenDialog()} className="w-full sm:w-auto">
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Nieuwe Declaratie
             </Button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <div className="lg:col-span-1">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
+            <div className="lg:col-span-1 order-2 lg:order-1">
                 <Card>
-                    <CardContent className="p-2 flex flex-col">
+                    <CardContent className="p-2 sm:p-4 flex flex-col">
                        <Calendar
                             mode="single"
                             onSelect={(day) => {
@@ -257,12 +257,12 @@ export default function DeclarationsPage() {
                 </Card>
             </div>
 
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-2 order-1 lg:order-2">
                  <Card>
                     <CardHeader>
-                        <div className="flex justify-between items-center">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                             <div className="flex-1">
-                                <CardTitle>Overzicht voor <span className="text-primary capitalize">{format(currentMonth, 'LLLL yyyy', { locale: nl })}</span></CardTitle>
+                                <CardTitle className="text-lg sm:text-xl">Overzicht voor <span className="text-primary capitalize">{format(currentMonth, 'LLLL yyyy', { locale: nl })}</span></CardTitle>
                             </div>
                              <div className="flex items-center gap-2 justify-end flex-1">
                                 <Button variant="outline" size="icon" onClick={() => setCurrentMonth(subMonths(currentMonth, 1))}>
@@ -274,17 +274,18 @@ export default function DeclarationsPage() {
                             </div>
                         </div>
                     </CardHeader>
-                    <CardContent>
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Datum</TableHead>
-                                    <TableHead>Bedrag</TableHead>
-                                    <TableHead>Reden</TableHead>
-                                    <TableHead>Status</TableHead>
-                                    <TableHead className="text-right">Bonnetje</TableHead>
-                                </TableRow>
-                            </TableHeader>
+                    <CardContent className="p-0 sm:p-6">
+                        <div className="overflow-x-auto">
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead className="min-w-[100px]">Datum</TableHead>
+                                        <TableHead className="min-w-[80px]">Bedrag</TableHead>
+                                        <TableHead className="min-w-[150px] hidden sm:table-cell">Reden</TableHead>
+                                        <TableHead className="min-w-[100px]">Status</TableHead>
+                                        <TableHead className="text-right min-w-[100px]">Bonnetje</TableHead>
+                                    </TableRow>
+                                </TableHeader>
                             <TableBody>
                                 {loading ? (
                                     Array.from({length: 3}).map((_, i) => (
@@ -299,10 +300,21 @@ export default function DeclarationsPage() {
                                 ) : monthlyDeclarations.length > 0 ? (
                                     monthlyDeclarations.map(dec => (
                                         <TableRow key={dec.id}>
-                                            <TableCell>{format(new Date(dec.date), 'dd-MM-yyyy')}</TableCell>
+                                            <TableCell className="font-medium">{format(new Date(dec.date), 'dd-MM-yyyy')}</TableCell>
                                             <TableCell>€ {dec.amount.toFixed(2)}</TableCell>
-                                            <TableCell>{dec.reason}</TableCell>
-                                            <TableCell>
+                                            <TableCell className="hidden sm:table-cell">{dec.reason}</TableCell>
+                                            <TableCell className="sm:hidden">
+                                                <div className="flex flex-col gap-1">
+                                                    <StatusBadge status={dec.status} />
+                                                    <span className="text-xs text-muted-foreground">{dec.reason}</span>
+                                                    {dec.status === 'rejected' && dec.rejectionReason && (
+                                                        <div className="text-xs text-destructive mt-1 p-2 bg-destructive/10 rounded-md">
+                                                            <strong>Afwijzingsreden:</strong> {dec.rejectionReason}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="hidden sm:table-cell">
                                                 <div className="flex flex-col gap-1">
                                                     <StatusBadge status={dec.status} />
                                                     {dec.status === 'rejected' && dec.rejectionReason && (
@@ -313,7 +325,7 @@ export default function DeclarationsPage() {
                                                 </div>
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                <Button variant="outline" size="sm" asChild>
+                                                <Button variant="outline" size="sm" asChild className="w-full sm:w-auto">
                                                     <a href={dec.receiptUrl} target="_blank" rel="noopener noreferrer">Bekijk</a>
                                                 </Button>
                                             </TableCell>
@@ -328,13 +340,14 @@ export default function DeclarationsPage() {
                                 )}
                             </TableBody>
                         </Table>
+                        </div>
                     </CardContent>
                 </Card>
             </div>
         </div>
       
       <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
-         <DialogContent className="sm:max-w-[425px]">
+         <DialogContent className="w-[95vw] max-w-[425px] max-h-[90vh] overflow-y-auto">
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                   <DialogHeader>

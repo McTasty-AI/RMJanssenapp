@@ -85,22 +85,22 @@ export default function FinesPage() {
     const loading = loadingFines || loadingPolicy;
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-6 sm:space-y-8">
             <div>
-                <h1 className="text-3xl font-bold">Mijn Boetes</h1>
-                <p className="text-muted-foreground">Hieronder vindt u een overzicht van de aan u toegewezen boetes voor dit jaar.</p>
+                <h1 className="text-2xl sm:text-3xl font-bold">Mijn Boetes</h1>
+                <p className="text-sm sm:text-base text-muted-foreground">Hieronder vindt u een overzicht van de aan u toegewezen boetes voor dit jaar.</p>
             </div>
 
             <Alert>
                 <BookText className="h-4 w-4" />
-                <AlertTitle>Bedrijfsbeleid Boetes</AlertTitle>
-                <AlertDescription>
+                <AlertTitle className="text-base sm:text-lg">Bedrijfsbeleid Boetes</AlertTitle>
+                <AlertDescription className="text-sm">
                    {loading ? (
                      <Skeleton className="h-12 w-full" />
                    ) : (
-                    <p className="whitespace-pre-wrap">{policyText}</p>
+                    <p className="whitespace-pre-wrap text-sm">{policyText}</p>
                    )}
-                   <div className="mt-2 text-sm border-t pt-2">
+                   <div className="mt-2 text-xs sm:text-sm border-t pt-2 space-y-1">
                         <p><strong>Aantal door bedrijf betaalde boetes dit jaar:</strong> {companyPaidCount}</p>
                         <p><strong>Totaalbedrag door bedrijf betaald dit jaar:</strong> €{companyPaidTotalAmount.toFixed(2)}</p>
                         <p><strong>Totaalbedrag door chauffeur betaald dit jaar:</strong> €{driverPaidTotalAmount.toFixed(2)}</p>
@@ -110,20 +110,21 @@ export default function FinesPage() {
             
             <Card>
                 <CardHeader>
-                    <CardTitle>Overzicht voor {currentYear}</CardTitle>
+                    <CardTitle className="text-lg sm:text-xl">Overzicht voor {currentYear}</CardTitle>
                 </CardHeader>
-                <CardContent>
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Datum</TableHead>
-                                <TableHead>Kenteken</TableHead>
-                                <TableHead>Reden</TableHead>
-                                <TableHead>Bedrag</TableHead>
-                                <TableHead>Betaald door</TableHead>
-                                <TableHead className="text-right">Boete</TableHead>
-                            </TableRow>
-                        </TableHeader>
+                <CardContent className="p-0 sm:p-6">
+                    <div className="overflow-x-auto">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead className="min-w-[100px]">Datum</TableHead>
+                                    <TableHead className="min-w-[100px]">Kenteken</TableHead>
+                                    <TableHead className="min-w-[150px] hidden sm:table-cell">Reden</TableHead>
+                                    <TableHead className="min-w-[80px]">Bedrag</TableHead>
+                                    <TableHead className="min-w-[120px]">Betaald door</TableHead>
+                                    <TableHead className="text-right min-w-[100px]">Boete</TableHead>
+                                </TableRow>
+                            </TableHeader>
                         <TableBody>
                             {loadingFines ? (
                                 Array.from({ length: 3 }).map((_, i) => (
@@ -139,14 +140,19 @@ export default function FinesPage() {
                             ) : yearlyFines.length > 0 ? (
                                 yearlyFines.map(fine => (
                                     <TableRow key={fine.id}>
-                                        <TableCell>{format(new Date(fine.date), 'dd-MM-yyyy')}</TableCell>
+                                        <TableCell className="font-medium">{format(new Date(fine.date), 'dd-MM-yyyy')}</TableCell>
                                         <TableCell>{fine.licensePlate || '-'}</TableCell>
-                                        <TableCell>{fine.reason}</TableCell>
+                                        <TableCell className="hidden sm:table-cell">{fine.reason}</TableCell>
+                                        <TableCell className="sm:hidden">
+                                            <div className="flex flex-col gap-1">
+                                                <span className="text-xs text-muted-foreground">{fine.reason}</span>
+                                            </div>
+                                        </TableCell>
                                         <TableCell>€{fine.amount.toFixed(2)}</TableCell>
                                         <TableCell><FineBadge paidBy={fine.paidBy} /></TableCell>
                                         <TableCell className="text-right">
                                             {fine.receiptUrl && (
-                                                <Button variant="outline" size="sm" asChild>
+                                                <Button variant="outline" size="sm" asChild className="w-full sm:w-auto">
                                                     <a href={fine.receiptUrl} target="_blank" rel="noopener noreferrer">Bekijk</a>
                                                 </Button>
                                             )}
@@ -162,6 +168,7 @@ export default function FinesPage() {
                             )}
                         </TableBody>
                     </Table>
+                    </div>
                 </CardContent>
             </Card>
         </div>

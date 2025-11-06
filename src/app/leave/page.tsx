@@ -198,13 +198,13 @@ export default function LeavePage() {
   };
 
   return (
-    <div className="space-y-8">
-        <div className="flex justify-between items-center">
+    <div className="space-y-6 sm:space-y-8">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
             <div>
-                <h1 className="text-3xl font-bold">Mijn Verlofaanvragen</h1>
-                <p className="text-muted-foreground">Dien nieuw verlof in en bekijk uw historie.</p>
+                <h1 className="text-2xl sm:text-3xl font-bold">Mijn Verlofaanvragen</h1>
+                <p className="text-sm sm:text-base text-muted-foreground">Dien nieuw verlof in en bekijk uw historie.</p>
             </div>
-            <Button onClick={() => setIsDialogOpen(true)}>
+            <Button onClick={() => setIsDialogOpen(true)} className="w-full sm:w-auto">
                 <PlusCircle className="mr-2 h-4 w-4" />
                 Nieuwe Aanvraag
             </Button>
@@ -212,20 +212,21 @@ export default function LeavePage() {
 
         <Card>
             <CardHeader>
-                <CardTitle>Overzicht van {format(new Date(), 'yyyy')}</CardTitle>
+                <CardTitle className="text-lg sm:text-xl">Overzicht van {format(new Date(), 'yyyy')}</CardTitle>
             </CardHeader>
-            <CardContent>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Startdatum</TableHead>
-                            <TableHead>Einddatum</TableHead>
-                            <TableHead>Reden</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Acties</TableHead>
-                        </TableRow>
-                    </TableHeader>
+            <CardContent className="p-0 sm:p-6">
+                <div className="overflow-x-auto">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead className="min-w-[100px]">Type</TableHead>
+                                <TableHead className="min-w-[110px]">Startdatum</TableHead>
+                                <TableHead className="min-w-[110px]">Einddatum</TableHead>
+                                <TableHead className="min-w-[150px] hidden sm:table-cell">Reden</TableHead>
+                                <TableHead className="min-w-[100px]">Status</TableHead>
+                                <TableHead className="text-right min-w-[120px]">Acties</TableHead>
+                            </TableRow>
+                        </TableHeader>
                     <TableBody>
                         {loading ? (
                             Array.from({length: 3}).map((_, i) => (
@@ -241,17 +242,23 @@ export default function LeavePage() {
                         ) : sortedLeaveRequests.length > 0 ? (
                             sortedLeaveRequests.map(req => (
                                 <TableRow key={req.id}>
-                                    <TableCell>{leaveTypeTranslations[req.type]}</TableCell>
+                                    <TableCell className="font-medium">{leaveTypeTranslations[req.type]}</TableCell>
                                     <TableCell>{format(new Date(req.startDate), 'dd-MM-yyyy')}</TableCell>
                                     <TableCell>{format(new Date(req.endDate), 'dd-MM-yyyy')}</TableCell>
-                                    <TableCell className="text-sm text-muted-foreground">{req.reason}</TableCell>
-                                    <TableCell><StatusBadge status={req.status} /></TableCell>
+                                    <TableCell className="text-sm text-muted-foreground hidden sm:table-cell">{req.reason || '-'}</TableCell>
+                                    <TableCell className="sm:hidden">
+                                        <div className="flex flex-col gap-1">
+                                            <StatusBadge status={req.status} />
+                                            {req.reason && <span className="text-xs text-muted-foreground">{req.reason}</span>}
+                                        </div>
+                                    </TableCell>
+                                    <TableCell className="hidden sm:table-cell"><StatusBadge status={req.status} /></TableCell>
                                     <TableCell className="text-right">
                                         {req.status === 'pending' && (
                                             <AlertDialog>
                                                 <AlertDialogTrigger asChild>
-                                                    <Button variant="outline" size="sm">
-                                                        <X className="mr-2 h-4 w-4" /> Intrekken
+                                                    <Button variant="outline" size="sm" className="w-full sm:w-auto">
+                                                        <X className="mr-2 h-4 w-4" /> <span className="hidden sm:inline">Intrekken</span>
                                                     </Button>
                                                 </AlertDialogTrigger>
                                                 <AlertDialogContent>
@@ -282,11 +289,12 @@ export default function LeavePage() {
                         )}
                     </TableBody>
                 </Table>
+                </div>
             </CardContent>
         </Card>
       
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="w-[95vw] max-w-[425px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Verlof aanvragen</DialogTitle>
             <DialogDescription>Selecteer de periode en het type verlof.</DialogDescription>
@@ -331,7 +339,7 @@ export default function LeavePage() {
                             defaultMonth={field.value.from}
                             selected={field.value as any}
                             onSelect={field.onChange}
-                            numberOfMonths={2}
+                            numberOfMonths={typeof window !== 'undefined' && window.innerWidth < 640 ? 1 : 2}
                             locale={nl}
                           />
                         </PopoverContent>
