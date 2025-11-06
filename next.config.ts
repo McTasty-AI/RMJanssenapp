@@ -2,9 +2,6 @@
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  experimental: {
-    esmExternals: "loose", // <– laat ESM-packages zoals pdfjs toe
-  },
   typescript: {
     ignoreBuildErrors: true,
   },
