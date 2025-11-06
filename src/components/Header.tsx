@@ -96,40 +96,16 @@ export default function Header() {
   return (
     <header className="bg-card border-b shadow-sm sticky top-0 z-50">
       <div className="container mx-auto">
-        <div className="flex flex-col gap-3 md:gap-4 py-3 md:py-2 px-4 md:px-6">
-          {/* Top Row: Logo, Admin and Logout */}
-          <div className="flex items-center justify-between gap-2">
-            {/* Logo */}
-            <div className="flex-shrink-0">
-              <Link href="/dashboard">
-                <HorizontalLogo />
-              </Link>
-            </div>
-
-            {/* Right Side Actions */}
-            <div className="flex items-center gap-2">
-              {user?.role === 'admin' && (
-                <Button variant="outline" size="sm" asChild className="relative">
-                  <Link href="/admin">
-                    <Shield className="mr-1.5 md:mr-2 h-4 w-4" />
-                    <span>Admin</span>
-                    {totalPending > 0 && (
-                      <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-1 text-xs rounded-full">
-                        {totalPending}
-                      </Badge>
-                    )}
-                  </Link>
-                </Button>
-              )}
-              <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-1.5 md:gap-2">
-                <LogOut className="h-4 w-4" />
-                <span className="hidden sm:inline">Uitloggen</span>
-              </Button>
-            </div>
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4 py-3 md:py-2 px-4 md:px-6">
+          {/* Logo */}
+          <div className="flex-shrink-0">
+            <Link href="/dashboard">
+              <HorizontalLogo />
+            </Link>
           </div>
 
-          {/* Bottom Row: Main Navigation */}
-          <nav className="flex items-center gap-1 md:gap-2 flex-wrap md:flex-nowrap justify-center md:justify-center">
+          {/* Main Navigation */}
+          <nav className="flex items-center gap-1 md:gap-2 flex-wrap md:flex-nowrap justify-center md:justify-center flex-1">
             <NavButton href="/timesheets" currentPath={pathname}>
               <CalendarClock className="mr-1.5 md:mr-2 h-4 w-4" /> 
               <span>Uren</span>
@@ -151,6 +127,27 @@ export default function Header() {
               <span>Schade</span>
             </NavButton>
           </nav>
+
+          {/* Right Side Actions */}
+          <div className="flex items-center gap-2 justify-end flex-shrink-0">
+            {user?.role === 'admin' && (
+              <Button variant="outline" size="sm" asChild className="relative">
+                <Link href="/admin">
+                  <Shield className="mr-1.5 md:mr-2 h-4 w-4" />
+                  <span>Admin</span>
+                  {totalPending > 0 && (
+                    <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-1 text-xs rounded-full">
+                      {totalPending}
+                    </Badge>
+                  )}
+                </Link>
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-1.5 md:gap-2">
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Uitloggen</span>
+            </Button>
+          </div>
         </div>
       </div>
     </header>
