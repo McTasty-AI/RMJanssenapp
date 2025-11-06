@@ -518,14 +518,60 @@ export default function AdminFinesPage() {
     const handleDeleteFine = async () => {
         if (!fineToDelete) return;
         setIsDeleting(true);
+        const fineIdToDelete = fineToDelete.id;
         try {
-            const { error } = await supabase.from('fines').delete().eq('id', fineToDelete.id);
+            const { error } = await supabase.from('fines').delete().eq('id', fineIdToDelete);
             if (error) throw error;
+            
+            // Optimistic update: remove from state immediately
+            setFines(prev => prev.filter(f => f.id !== fineIdToDelete));
+            
             toast({
                 title: "Boete verwijderd",
                 description: "De boete is succesvol verwijderd.",
             });
         } catch (error) {
+            // On error, refresh the list to ensure consistency
+            const fetchFines = async () => {
+                const { data, error } = await supabase
+                  .from('fines')
+                  .select('*')
+                  .order('created_at', { ascending: false })
+                  .limit(50);
+                if (error) {
+                    console.error("Error fetching fines:", error);
+                    return;
+                }
+                
+                // Generate signed URLs for receipts
+                const mapped = await Promise.all((data || []).map(async (r) => {
+                    let receiptUrl: string | undefined = undefined;
+                    if (r.receipt_path) {
+                        const { data: signedUrlData } = await supabase.storage
+                            .from('fines')
+                            .createSignedUrl(r.receipt_path, 3600);
+                        receiptUrl = signedUrlData?.signedUrl;
+                    }
+                    
+                    return {
+                        id: r.id,
+                        userId: r.user_id || '',
+                        userFirstName: '',
+                        userLastName: '',
+                        date: r.date ? new Date(r.date).toISOString() : new Date().toISOString(),
+                        amount: Number(r.amount) || 0,
+                        reason: r.reason || '',
+                        paidBy: r.paid_by || 'company',
+                        receiptUrl,
+                        licensePlate: r.license_plate || undefined,
+                        createdAt: r.created_at || new Date().toISOString(),
+                    } as Fine;
+                }));
+                
+                setFines(mapped);
+            };
+            await fetchFines();
+            
             toast({
                 variant: 'destructive',
                 title: 'Verwijderen mislukt',
