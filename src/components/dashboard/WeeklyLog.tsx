@@ -53,7 +53,7 @@ const TimeInput = ({ name, disabled }: { name: string, disabled: boolean }) => {
                                     <SelectValue placeholder="UU" />
                                 </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent position="item-aligned" sideOffset={4}>
                                 {Array.from({ length: 25 }, (_, i) => i).map(h => <SelectItem key={h} value={String(h)}>{String(h).padStart(2, '0')}</SelectItem>)}
                             </SelectContent>
                         </Select>
@@ -71,7 +71,7 @@ const TimeInput = ({ name, disabled }: { name: string, disabled: boolean }) => {
                                     <SelectValue placeholder="MM" />
                                 </SelectTrigger>
                             </FormControl>
-                            <SelectContent>
+                            <SelectContent position="item-aligned" sideOffset={4}>
                                 {[0, 15, 30, 45].map(m => <SelectItem key={m} value={String(m)}>{String(m).padStart(2, '0')}</SelectItem>)}
                             </SelectContent>
                         </Select>
@@ -105,7 +105,7 @@ const BreakTimeInput = ({ name, disabled }: { name: string, disabled: boolean })
                                 <SelectValue placeholder="Min" />
                             </SelectTrigger>
                         </FormControl>
-                        <SelectContent>
+                        <SelectContent position="item-aligned" sideOffset={4}>
                             {[0, 15, 30, 45, 60, 75, 90].map(m => <SelectItem key={m} value={String(m)}>{m} min</SelectItem>)}
                         </SelectContent>
                     </Select>
@@ -203,7 +203,7 @@ const MobileDayCard = ({ index, handlePlateChange, assignedPlates, formIsEditabl
                                             <SelectValue placeholder="Selecteer status" />
                                         </SelectTrigger>
                                     </FormControl>
-                                    <SelectContent>
+                                    <SelectContent position="item-aligned" sideOffset={4}>
                                         {Object.entries(statusTranslations).map(([key, value]) => (
                                         <SelectItem key={key} value={key}>{value}</SelectItem>
                                         ))}
@@ -225,7 +225,7 @@ const MobileDayCard = ({ index, handlePlateChange, assignedPlates, formIsEditabl
                                                     <SelectValue placeholder="Kies kenteken" />
                                                 </SelectTrigger>
                                             </FormControl>
-                                            <SelectContent>
+                                            <SelectContent position="item-aligned" sideOffset={4}>
                                                 {assignedPlates.map(plate => (
                                                     <SelectItem key={plate} value={plate}>{plate}</SelectItem>
                                                 ))}
@@ -310,7 +310,7 @@ const MobileDayCard = ({ index, handlePlateChange, assignedPlates, formIsEditabl
                                                     <SelectValue placeholder="Selecteer tol" />
                                                 </SelectTrigger>
                                             </FormControl>
-                                            <SelectContent>
+                                            <SelectContent position="item-aligned" sideOffset={4}>
                                                 {tollOptions.map((option) => (
                                                     <SelectItem key={option} value={option}>{option}</SelectItem>
                                                 ))}
@@ -773,7 +773,7 @@ export function WeeklyLogForm({
                                     <SelectValue placeholder="Selecteer status" />
                                 </SelectTrigger>
                                 </FormControl>
-                                <SelectContent>
+                                <SelectContent position="item-aligned" sideOffset={4}>
                                 {Object.entries(statusTranslations).map(([key, value]) => (
                                     <SelectItem key={key} value={key}>{value}</SelectItem>
                                 ))}
@@ -799,7 +799,7 @@ export function WeeklyLogForm({
                                                 <SelectValue placeholder="Kies kenteken" />
                                             </SelectTrigger>
                                             </FormControl>
-                                            <SelectContent>
+                                            <SelectContent position="item-aligned" sideOffset={4}>
                                             {assignedPlates.map(plate => (
                                                 <SelectItem key={plate} value={plate}>{plate}</SelectItem>
                                             ))}
@@ -870,7 +870,7 @@ export function WeeklyLogForm({
                                                 <SelectValue placeholder="Selecteer tol" />
                                             </SelectTrigger>
                                         </FormControl>
-                                        <SelectContent>
+                                        <SelectContent position="item-aligned" sideOffset={4}>
                                             {tollOptions.map((option) => (
                                                 <SelectItem key={option} value={option}>{option}</SelectItem>
                                             ))}
