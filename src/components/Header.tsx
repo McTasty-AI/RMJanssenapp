@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { LogOut, Shield, Home, CalendarClock, Coins, CalendarOff, Receipt, FileText, ShieldAlert } from "lucide-react";
+import { LogOut, Shield, CalendarClock, Coins, CalendarOff, Receipt, ShieldAlert } from "lucide-react";
 import HorizontalLogo from "./HorizontalLogo";
 import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase/client";
@@ -95,35 +95,10 @@ export default function Header() {
 
   return (
     <>
-      {/* Top Bar with Admin and Logout */}
+      {/* Top Bar with Logo, Admin and Logout */}
       <div className="bg-muted/50 border-b sticky top-0 z-50">
         <div className="container mx-auto">
-          <div className="flex items-center justify-end gap-2 py-1.5 px-4 md:px-6">
-            {user?.role === 'admin' && (
-              <Button variant="outline" size="sm" asChild className="relative">
-                <Link href="/admin">
-                  <Shield className="mr-1.5 md:mr-2 h-4 w-4" />
-                  <span>Admin</span>
-                  {totalPending > 0 && (
-                    <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-1 text-xs rounded-full">
-                      {totalPending}
-                    </Badge>
-                  )}
-                </Link>
-              </Button>
-            )}
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-1.5 md:gap-2">
-              <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">Uitloggen</span>
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Header */}
-      <header className="bg-card border-b shadow-sm sticky top-[41px] z-40">
-        <div className="container mx-auto">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4 py-3 md:py-2 px-4 md:px-6">
+          <div className="flex items-center justify-between gap-2 py-1.5 px-4 md:px-6">
             {/* Logo */}
             <div className="flex-shrink-0">
               <Link href="/dashboard">
@@ -131,12 +106,36 @@ export default function Header() {
               </Link>
             </div>
 
+            {/* Right Side Actions */}
+            <div className="flex items-center gap-2">
+              {user?.role === 'admin' && (
+                <Button variant="outline" size="sm" asChild className="relative">
+                  <Link href="/admin">
+                    <Shield className="mr-1.5 md:mr-2 h-4 w-4" />
+                    <span>Admin</span>
+                    {totalPending > 0 && (
+                      <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-1 text-xs rounded-full">
+                        {totalPending}
+                      </Badge>
+                    )}
+                  </Link>
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-1.5 md:gap-2">
+                <LogOut className="h-4 w-4" />
+                <span className="hidden sm:inline">Uitloggen</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Header */}
+      <header className="bg-card border-b shadow-sm sticky top-[41px] z-40">
+        <div className="container mx-auto">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-center gap-3 md:gap-4 py-3 md:py-2 px-4 md:px-6">
             {/* Main Navigation */}
-            <nav className="flex items-center gap-1 md:gap-2 flex-wrap md:flex-nowrap justify-center md:justify-start flex-1 md:flex-none">
-              <NavButton href="/dashboard" currentPath={pathname}>
-                <Home className="mr-1.5 md:mr-2 h-4 w-4" /> 
-                <span className="hidden sm:inline">Home</span>
-              </NavButton>
+            <nav className="flex items-center gap-1 md:gap-2 flex-wrap md:flex-nowrap justify-center md:justify-center">
               <NavButton href="/timesheets" currentPath={pathname}>
                 <CalendarClock className="mr-1.5 md:mr-2 h-4 w-4" /> 
                 <span>Uren</span>
