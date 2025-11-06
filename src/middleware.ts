@@ -6,8 +6,11 @@ const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 export async function middleware(req: NextRequest) {
   const { pathname, origin, search } = req.nextUrl;
 
-  // Only protect /admin paths
-  if (!pathname.startsWith('/admin')) {
+  // Protect /admin page routes and /api/admin API routes
+  const isAdminPage = pathname.startsWith('/admin');
+  const isAdminApi = pathname.startsWith('/api/admin');
+  
+  if (!isAdminPage && !isAdminApi) {
     return NextResponse.next();
   }
 
@@ -58,9 +61,25 @@ export async function middleware(req: NextRequest) {
     const rows: any[] = await pRes.json();
     const role = rows?.[0]?.role;
     if (role !== 'admin') {
+      // For API routes, return 403 JSON response
+      if (isAdminApi) {
+        return NextResponse.json(
+          { error: 'Forbidden: Admin role required' },
+          { status: 403 }
+        );
+      }
+      // For page routes, redirect to dashboard
       return NextResponse.redirect(new URL('/dashboard', origin));
     }
   } catch {
+    // For API routes, return 401 JSON response
+    if (isAdminApi) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+    // For page routes, redirect to login
     return NextResponse.redirect(new URL('/login', origin));
   }
 
@@ -68,5 +87,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/admin/:path*', '/api/admin/:path*'],
 };

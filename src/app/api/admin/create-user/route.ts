@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminClient } from '@/lib/supabase/server';
+import { validateAdminRequest } from '@/lib/auth/server-admin';
 
 export async function POST(req: NextRequest) {
     try {
+        // Validate admin role
+        const validation = await validateAdminRequest(req);
+        if (!validation.valid) {
+            return validation.response;
+        }
+
+        const { adminClient } = validation;
         const { email, password, firstName, lastName, role } = await req.json();
 
         if (!email || !password || !firstName || !lastName) {
@@ -11,24 +18,6 @@ export async function POST(req: NextRequest) {
                 { status: 400 }
             );
         }
-
-        const adminClient = getAdminClient();
-
-        // Verify caller is admin via bearer token
-        const authHeader = req.headers.get('authorization') || '';
-        const token = authHeader.toLowerCase().startsWith('bearer ')
-          ? authHeader.slice(7)
-          : undefined;
-        if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        const { data: caller, error: callerErr } = await adminClient.auth.getUser(token);
-        if (callerErr || !caller?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        const callerId = caller.user.id;
-        const { data: callerProfile } = await adminClient
-            .from('profiles')
-            .select('role')
-            .eq('id', callerId)
-            .maybeSingle();
-        if (!callerProfile || callerProfile.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         // Create user in Supabase Auth
         const { data: authData, error: authError } = await adminClient.auth.admin.createUser({
@@ -87,6 +76,8 @@ export async function POST(req: NextRequest) {
         );
     }
 }
+
+
 
 
 

@@ -1,34 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAdminClient } from '@/lib/supabase/server';
+import { validateAdminRequest } from '@/lib/auth/server-admin';
 
 export async function POST(req: NextRequest) {
   try {
-    const admin = getAdminClient();
-
-    const authHeader = req.headers.get('authorization') || '';
-    const token = authHeader.toLowerCase().startsWith('bearer ')
-      ? authHeader.slice(7)
-      : undefined;
-
-    if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Validate admin role
+    const validation = await validateAdminRequest(req);
+    if (!validation.valid) {
+      return validation.response;
     }
 
-    const { data: authUser, error: authErr } = await admin.auth.getUser(token);
-    if (authErr || !authUser?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Verify caller is admin
-    const callerId = authUser.user.id;
-    const { data: callerProfile } = await admin
-      .from('profiles')
-      .select('role')
-      .eq('id', callerId)
-      .maybeSingle();
-    if (!callerProfile || callerProfile.role !== 'admin') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
+    const { adminClient: admin } = validation;
 
     const body = await req.json();
     const userId: string | undefined = body.userId;

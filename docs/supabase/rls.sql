@@ -19,13 +19,24 @@ alter table suppliers enable row level security;
 alter table purchase_invoices enable row level security;
 alter table purchase_invoice_lines enable row level security;
 alter table documents enable row level security;
+alter table vehicle_statuses enable row level security;
+alter table company_profile enable row level security;
+alter table financial_settings enable row level security;
 
 -- Helpers: rol bepalen via profiel
-create or replace function is_admin() returns boolean as $$
+-- Note: SET search_path prevents SQL injection via schema manipulation
+-- SECURITY DEFINER is needed to bypass RLS when checking admin status
+create or replace function is_admin() 
+returns boolean
+language sql
+stable
+SECURITY DEFINER
+SET search_path = public, pg_temp
+as $$
   select exists (
     select 1 from profiles p where p.id = auth.uid() and p.role = 'admin'
   );
-$$ language sql stable;
+$$;
 
 -- Profiles
 drop policy if exists "profiles self read" on profiles;
@@ -151,3 +162,27 @@ create policy "purchase_invoice_lines admin all" on purchase_invoice_lines for a
 -- Documents (alleen admin)
 drop policy if exists "documents admin all" on documents;
 create policy "documents admin all" on documents for all using (is_admin()) with check (is_admin());
+
+-- Vehicle Statuses (admin write, authenticated read)
+drop policy if exists "vehicle_statuses admin all" on vehicle_statuses;
+create policy "vehicle_statuses admin all" on vehicle_statuses
+  for all using (is_admin()) with check (is_admin());
+drop policy if exists "vehicle_statuses authenticated read" on vehicle_statuses;
+create policy "vehicle_statuses authenticated read" on vehicle_statuses
+  for select using (auth.role() = 'authenticated');
+
+-- Company Profile (admin write, authenticated read)
+drop policy if exists "company_profile admin all" on company_profile;
+create policy "company_profile admin all" on company_profile
+  for all using (is_admin()) with check (is_admin());
+drop policy if exists "company_profile authenticated read" on company_profile;
+create policy "company_profile authenticated read" on company_profile
+  for select using (auth.role() = 'authenticated');
+
+-- Financial Settings (admin write, authenticated read)
+drop policy if exists "financial_settings admin all" on financial_settings;
+create policy "financial_settings admin all" on financial_settings
+  for all using (is_admin()) with check (is_admin());
+drop policy if exists "financial_settings authenticated read" on financial_settings;
+create policy "financial_settings authenticated read" on financial_settings
+  for select using (auth.role() = 'authenticated');

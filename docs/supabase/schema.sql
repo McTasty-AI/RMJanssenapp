@@ -97,13 +97,17 @@ create table if not exists profiles (
 );
 
 -- Helper: updated_at trigger function
+-- Note: SET search_path prevents SQL injection via schema manipulation
 create or replace function public.set_current_timestamp_updated_at()
-returns trigger as $fn$
+returns trigger
+language plpgsql
+SET search_path = public, pg_temp
+as $fn$
 begin
   new.updated_at = now();
   return new;
 end;
-$fn$ language plpgsql;
+$fn$;
 
 -- Make trigger creation idempotent on re-runs
 drop trigger if exists profiles_set_updated_at on profiles;
@@ -165,6 +169,9 @@ create table if not exists weekly_logs (
   created_at timestamptz not null default now()
 );
 create unique index if not exists weekly_logs_unique on weekly_logs(week_id, user_id);
+create index if not exists weekly_logs_status_idx on weekly_logs(status);
+create index if not exists weekly_logs_user_status_idx on weekly_logs(user_id, status);
+create index if not exists weekly_logs_submitted_at_idx on weekly_logs(submitted_at) where submitted_at is not null;
 
 create table if not exists daily_logs (
   id uuid primary key default gen_random_uuid(),
@@ -201,6 +208,9 @@ create table if not exists declarations (
   is_toll boolean default false
 );
 create index if not exists declarations_user_idx on declarations(user_id);
+create index if not exists declarations_status_idx on declarations(status);
+create index if not exists declarations_user_status_idx on declarations(user_id, status);
+create index if not exists declarations_submitted_at_idx on declarations(submitted_at);
 
 create table if not exists leave_requests (
   id uuid primary key default gen_random_uuid(),
@@ -214,6 +224,9 @@ create table if not exists leave_requests (
   rejection_reason text
 );
 create index if not exists leave_user_idx on leave_requests(user_id);
+create index if not exists leave_requests_status_idx on leave_requests(status);
+create index if not exists leave_requests_user_status_idx on leave_requests(user_id, status);
+create index if not exists leave_requests_submitted_at_idx on leave_requests(submitted_at);
 
 -- =====================================================
 -- Boetes
@@ -236,8 +249,12 @@ create index if not exists fines_date_idx on fines(date);
 create index if not exists fines_license_idx on fines(license_plate);
 
 -- Automatische matching van boete -> chauffeur o.b.v. kenteken + datum
+-- Note: SET search_path prevents SQL injection via schema manipulation
 create or replace function assign_fine_to_driver()
-returns trigger as $$
+returns trigger
+language plpgsql
+SET search_path = public, pg_temp
+as $$
 declare
   v_vehicle_id uuid;
   v_user_id uuid;
@@ -267,7 +284,7 @@ begin
   end if;
   return new;
 end;
-$$ language plpgsql;
+$$;
 
 drop trigger if exists trg_assign_fine_to_driver on fines;
 create trigger trg_assign_fine_to_driver
@@ -367,8 +384,12 @@ create table if not exists invoice_counters (
   last_number integer not null default 0
 );
 
+-- Note: SET search_path prevents SQL injection via schema manipulation
 create or replace function next_invoice_number()
-returns text as $$
+returns text
+language plpgsql
+SET search_path = public, pg_temp
+as $$
 declare
   y integer := extract(year from current_date)::int;
   n integer;
@@ -384,7 +405,7 @@ begin
 
   return lpad(n::text, 5, '0') || '/' || y::text;
 end;
-$$ language plpgsql;
+$$;
 
 -- =====================================================
 -- Company Profile (singleton)
@@ -465,14 +486,20 @@ create table if not exists purchase_invoice_lines (
 create index if not exists purchase_lines_invoice_idx on purchase_invoice_lines(purchase_invoice_id);
 
 -- Attempt to auto-link purchase invoice to vehicle when kenteken is aanwezig
+-- Note: SET search_path prevents SQL injection via schema manipulation
 create or replace function link_purchase_invoice_vehicle()
-returns trigger as $$
-declare v_vehicle_id uuid; begin
+returns trigger
+language plpgsql
+SET search_path = public, pg_temp
+as $$
+declare v_vehicle_id uuid; 
+begin
   if new.license_plate is null then return new; end if;
   select id into v_vehicle_id from vehicles where license_plate = new.license_plate;
   if v_vehicle_id is not null then new.vehicle_id := v_vehicle_id; end if;
   return new;
-end; $$ language plpgsql;
+end; 
+$$;
 
 drop trigger if exists trg_link_purchase_vehicle on purchase_invoices;
 create trigger trg_link_purchase_vehicle
@@ -506,7 +533,8 @@ create index if not exists documents_entity_idx on documents(entity_type, entity
 -- =====================================================
 -- Views / Rapportages (voorbeeld: kosten per voertuig)
 -- =====================================================
-create or replace view vehicle_costs as
+-- Note: View is created with SECURITY INVOKER (not SECURITY DEFINER) for security
+create or replace view vehicle_costs with (security_invoker = true) as
 select v.id as vehicle_id,
        v.license_plate,
        coalesce(sum(pil.total),0) as total_costs
