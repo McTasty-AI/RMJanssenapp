@@ -9,7 +9,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, UploadCloud, Bot, FileText, Check, ArrowRight } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { pdfjs } from '@/lib/pdfjs';
+import { pdfjs } from '@/lib/pdf-worker';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { pdfjs } from '@/lib/pdfjs';
+import { pdfjs } from '@/lib/pdf-worker';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';

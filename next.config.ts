@@ -26,7 +26,15 @@ const nextConfig: NextConfig = {
         fs: false,
       };
     }
+    // Configure webpack to handle pdf.worker.min.mjs as asset/source
+    config.module.rules.push({
+      test: /pdf\.worker\.min\.mjs$/,
+      type: "asset/source",
+    });
     return config;
+  },
+  experimental: {
+    esmExternals: "loose",
   },
   // Turbopack configuration for development builds
   turbopack: {
