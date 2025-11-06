@@ -31,7 +31,8 @@ const loadReactPdf = async () => {
     const pdfjs = reactPdfModule.pdfjs || (reactPdfModule as any).default?.pdfjs;
     if (pdfjs) {
       // Use CDN worker URL - Next.js/Webpack doesn't support new URL() with import.meta.url for ESM packages
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version || '4.4.168'}/pdf.worker.min.mjs`;
+      // Updated for pdfjs-dist 3.11.174
+      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version || '3.11.174'}/pdf.worker.min.mjs`;
     }
     
     reactPdfLoaded = true;

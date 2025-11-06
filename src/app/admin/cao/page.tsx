@@ -29,8 +29,8 @@ export default function AdminCaoPage() {
                 const workerPath = 'pdfjs-dist/build/pdf.worker.min.mjs';
                 pdfjs.GlobalWorkerOptions.workerSrc = new URL(workerPath, import.meta.url).toString();
             } catch (e) {
-                // Fallback to CDN if import.meta.url fails
-                pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs';
+                // Fallback to CDN if import.meta.url fails (pdfjs-dist 3.11.174)
+                pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.mjs';
             }
         }
     }, []);
