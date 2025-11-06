@@ -226,9 +226,9 @@ export default function DeclarationsPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
-            <div className="lg:col-span-1 order-2 lg:order-1">
-                <Card>
-                    <CardContent className="p-2 sm:p-4 flex flex-col">
+            <div className="lg:col-span-1 order-2 lg:order-1 flex justify-center">
+                <Card className="w-full max-w-fit">
+                    <CardContent className="p-2 sm:p-4 flex flex-col items-center">
                        <Calendar
                             mode="single"
                             onSelect={(day) => {
