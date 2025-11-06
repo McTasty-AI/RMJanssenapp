@@ -94,46 +94,11 @@ export default function Header() {
   const totalPending = pendingWeekstates + pendingDeclarations + pendingLeaveRequests;
 
   return (
-    <header className="bg-card border-b shadow-sm sticky top-0 z-50">
-      <div className="container mx-auto">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4 py-3 md:py-2 px-4 md:px-6">
-          {/* Logo */}
-          <div className="flex-shrink-0">
-            <Link href="/dashboard">
-              <HorizontalLogo />
-            </Link>
-          </div>
-
-          {/* Main Navigation */}
-          <nav className="flex items-center gap-1 md:gap-2 flex-wrap md:flex-nowrap justify-center md:justify-start flex-1 md:flex-none">
-            <NavButton href="/dashboard" currentPath={pathname}>
-              <Home className="mr-1.5 md:mr-2 h-4 w-4" /> 
-              <span className="hidden sm:inline">Home</span>
-            </NavButton>
-            <NavButton href="/timesheets" currentPath={pathname}>
-              <CalendarClock className="mr-1.5 md:mr-2 h-4 w-4" /> 
-              <span>Uren</span>
-            </NavButton>
-            <NavButton href="/leave" currentPath={pathname}>
-              <CalendarOff className="mr-1.5 md:mr-2 h-4 w-4" /> 
-              <span>Verlof</span>
-            </NavButton>
-            <NavButton href="/declarations" currentPath={pathname}>
-              <Coins className="mr-1.5 md:mr-2 h-4 w-4" /> 
-              <span>Declaraties</span>
-            </NavButton>
-            <NavButton href="/fines" currentPath={pathname}>
-              <Receipt className="mr-1.5 md:mr-2 h-4 w-4" /> 
-              <span>Boetes</span>
-            </NavButton>
-            <NavButton href="/schade" currentPath={pathname}>
-              <ShieldAlert className="mr-1.5 md:mr-2 h-4 w-4" /> 
-              <span>Schade</span>
-            </NavButton>
-          </nav>
-
-          {/* Right Side Actions */}
-          <div className="flex items-center gap-2 justify-end flex-shrink-0">
+    <>
+      {/* Top Bar with Admin and Logout */}
+      <div className="bg-muted/50 border-b sticky top-0 z-50">
+        <div className="container mx-auto">
+          <div className="flex items-center justify-end gap-2 py-1.5 px-4 md:px-6">
             {user?.role === 'admin' && (
               <Button variant="outline" size="sm" asChild className="relative">
                 <Link href="/admin">
@@ -154,6 +119,48 @@ export default function Header() {
           </div>
         </div>
       </div>
-    </header>
+
+      {/* Main Header */}
+      <header className="bg-card border-b shadow-sm sticky top-[41px] z-40">
+        <div className="container mx-auto">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4 py-3 md:py-2 px-4 md:px-6">
+            {/* Logo */}
+            <div className="flex-shrink-0">
+              <Link href="/dashboard">
+                <HorizontalLogo />
+              </Link>
+            </div>
+
+            {/* Main Navigation */}
+            <nav className="flex items-center gap-1 md:gap-2 flex-wrap md:flex-nowrap justify-center md:justify-start flex-1 md:flex-none">
+              <NavButton href="/dashboard" currentPath={pathname}>
+                <Home className="mr-1.5 md:mr-2 h-4 w-4" /> 
+                <span className="hidden sm:inline">Home</span>
+              </NavButton>
+              <NavButton href="/timesheets" currentPath={pathname}>
+                <CalendarClock className="mr-1.5 md:mr-2 h-4 w-4" /> 
+                <span>Uren</span>
+              </NavButton>
+              <NavButton href="/leave" currentPath={pathname}>
+                <CalendarOff className="mr-1.5 md:mr-2 h-4 w-4" /> 
+                <span>Verlof</span>
+              </NavButton>
+              <NavButton href="/declarations" currentPath={pathname}>
+                <Coins className="mr-1.5 md:mr-2 h-4 w-4" /> 
+                <span>Declaraties</span>
+              </NavButton>
+              <NavButton href="/fines" currentPath={pathname}>
+                <Receipt className="mr-1.5 md:mr-2 h-4 w-4" /> 
+                <span>Boetes</span>
+              </NavButton>
+              <NavButton href="/schade" currentPath={pathname}>
+                <ShieldAlert className="mr-1.5 md:mr-2 h-4 w-4" /> 
+                <span>Schade</span>
+              </NavButton>
+            </nav>
+          </div>
+        </div>
+      </header>
+    </>
   );
 }
