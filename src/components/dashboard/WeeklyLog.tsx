@@ -41,7 +41,7 @@ const isWeekLockedByTime = (weekDate: Date): boolean => {
 const TimeInput = ({ name, disabled }: { name: string, disabled: boolean }) => {
     const { control } = useFormContext<WeeklyLogFormData>();
     return (
-        <div className="flex gap-1">
+        <div className="flex gap-1 items-center">
             <FormField
                 control={control}
                 name={`${name}.hour` as any}
@@ -49,7 +49,7 @@ const TimeInput = ({ name, disabled }: { name: string, disabled: boolean }) => {
                     <FormItem>
                         <Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)} disabled={disabled}>
                             <FormControl>
-                                <SelectTrigger className="w-[55px] h-9 text-xs">
+                                <SelectTrigger className="w-[50px] min-w-[50px] h-9 text-xs px-1">
                                     <SelectValue placeholder="UU" />
                                 </SelectTrigger>
                             </FormControl>
@@ -67,7 +67,7 @@ const TimeInput = ({ name, disabled }: { name: string, disabled: boolean }) => {
                     <FormItem>
                         <Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value)} disabled={disabled}>
                             <FormControl>
-                                <SelectTrigger className="w-[55px] h-9 text-xs">
+                                <SelectTrigger className="w-[50px] min-w-[50px] h-9 text-xs px-1">
                                     <SelectValue placeholder="MM" />
                                 </SelectTrigger>
                             </FormControl>
@@ -732,8 +732,8 @@ export function WeeklyLogForm({
                                 <TableHead className="w-[120px] min-w-[120px] px-2 text-xs">Status</TableHead>
                                 <TableHead className="w-[120px] min-w-[120px] px-2 text-xs">Kenteken</TableHead>
                                 <TableHead className="w-[65px] min-w-[65px] px-2 text-xs">Ritnr</TableHead>
-                                <TableHead className="w-[95px] min-w-[95px] px-2 text-xs">Start</TableHead>
-                                <TableHead className="w-[95px] min-w-[95px] px-2 text-xs">Eind</TableHead>
+                                <TableHead className="w-[110px] min-w-[110px] px-2 text-xs">Start</TableHead>
+                                <TableHead className="w-[110px] min-w-[110px] px-2 text-xs">Eind</TableHead>
                                 <TableHead className="w-[75px] min-w-[75px] px-2 text-xs">Pauze</TableHead>
                                 <TableHead className="w-[70px] min-w-[70px] px-2 text-xs">Uren</TableHead>
                                 <TableHead className="w-[85px] min-w-[85px] px-2 text-xs">Beginstand</TableHead>
