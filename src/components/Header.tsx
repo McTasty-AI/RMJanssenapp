@@ -94,11 +94,11 @@ export default function Header() {
   const totalPending = pendingWeekstates + pendingDeclarations + pendingLeaveRequests;
 
   return (
-    <>
-      {/* Top Bar with Logo, Admin and Logout */}
-      <div className="bg-muted/50 border-b sticky top-0 z-50">
-        <div className="container mx-auto">
-          <div className="flex items-center justify-between gap-2 py-1.5 px-4 md:px-6">
+    <header className="bg-card border-b shadow-sm sticky top-0 z-50">
+      <div className="container mx-auto">
+        <div className="flex flex-col gap-3 md:gap-4 py-3 md:py-2 px-4 md:px-6">
+          {/* Top Row: Logo, Admin and Logout */}
+          <div className="flex items-center justify-between gap-2">
             {/* Logo */}
             <div className="flex-shrink-0">
               <Link href="/dashboard">
@@ -127,39 +127,32 @@ export default function Header() {
               </Button>
             </div>
           </div>
+
+          {/* Bottom Row: Main Navigation */}
+          <nav className="flex items-center gap-1 md:gap-2 flex-wrap md:flex-nowrap justify-center md:justify-center">
+            <NavButton href="/timesheets" currentPath={pathname}>
+              <CalendarClock className="mr-1.5 md:mr-2 h-4 w-4" /> 
+              <span>Uren</span>
+            </NavButton>
+            <NavButton href="/leave" currentPath={pathname}>
+              <CalendarOff className="mr-1.5 md:mr-2 h-4 w-4" /> 
+              <span>Verlof</span>
+            </NavButton>
+            <NavButton href="/declarations" currentPath={pathname}>
+              <Coins className="mr-1.5 md:mr-2 h-4 w-4" /> 
+              <span>Declaraties</span>
+            </NavButton>
+            <NavButton href="/fines" currentPath={pathname}>
+              <Receipt className="mr-1.5 md:mr-2 h-4 w-4" /> 
+              <span>Boetes</span>
+            </NavButton>
+            <NavButton href="/schade" currentPath={pathname}>
+              <ShieldAlert className="mr-1.5 md:mr-2 h-4 w-4" /> 
+              <span>Schade</span>
+            </NavButton>
+          </nav>
         </div>
       </div>
-
-      {/* Main Header */}
-      <header className="bg-card border-b shadow-sm sticky top-[41px] z-40">
-        <div className="container mx-auto">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-center gap-3 md:gap-4 py-3 md:py-2 px-4 md:px-6">
-            {/* Main Navigation */}
-            <nav className="flex items-center gap-1 md:gap-2 flex-wrap md:flex-nowrap justify-center md:justify-center">
-              <NavButton href="/timesheets" currentPath={pathname}>
-                <CalendarClock className="mr-1.5 md:mr-2 h-4 w-4" /> 
-                <span>Uren</span>
-              </NavButton>
-              <NavButton href="/leave" currentPath={pathname}>
-                <CalendarOff className="mr-1.5 md:mr-2 h-4 w-4" /> 
-                <span>Verlof</span>
-              </NavButton>
-              <NavButton href="/declarations" currentPath={pathname}>
-                <Coins className="mr-1.5 md:mr-2 h-4 w-4" /> 
-                <span>Declaraties</span>
-              </NavButton>
-              <NavButton href="/fines" currentPath={pathname}>
-                <Receipt className="mr-1.5 md:mr-2 h-4 w-4" /> 
-                <span>Boetes</span>
-              </NavButton>
-              <NavButton href="/schade" currentPath={pathname}>
-                <ShieldAlert className="mr-1.5 md:mr-2 h-4 w-4" /> 
-                <span>Schade</span>
-              </NavButton>
-            </nav>
-          </div>
-        </div>
-      </header>
-    </>
+    </header>
   );
 }
