@@ -138,7 +138,7 @@ export default function Header() {
               <Button variant="outline" size="sm" asChild className="relative">
                 <Link href="/admin">
                   <Shield className="mr-1.5 md:mr-2 h-4 w-4" />
-                  <span className="hidden sm:inline">Admin</span>
+                  <span>Admin</span>
                   {totalPending > 0 && (
                     <Badge variant="destructive" className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-1 text-xs rounded-full">
                       {totalPending}
