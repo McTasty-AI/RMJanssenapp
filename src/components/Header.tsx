@@ -128,8 +128,7 @@ export default function Header() {
             </NavButton>
             <NavButton href="/schade" currentPath={pathname}>
               <ShieldAlert className="mr-1.5 md:mr-2 h-4 w-4" /> 
-              <span className="hidden sm:inline">Schade</span>
-              <span className="sm:hidden">Schade</span>
+              <span>Schade</span>
             </NavButton>
           </nav>
 
