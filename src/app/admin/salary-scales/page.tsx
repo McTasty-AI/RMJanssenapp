@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { salaryScales } from '@/lib/salary-data';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -15,12 +15,6 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { analyzeFunctieloonschaalDocument, type AnalyzeFunctieloonschaalDocumentOutput } from '@/ai/flows/analyze-functieloonschaal-document-flow';
 
-// Set up the worker for pdf.js using CDN - use hardcoded version to avoid webpack import issues
-if (typeof window !== 'undefined') {
-    pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs';
-}
-
-
 const formatCurrency = (value: number) => `€ ${value.toFixed(2)}`;
 
 export default function SalaryScalesPage() {
@@ -32,6 +26,20 @@ export default function SalaryScalesPage() {
     const [analysisResult, setAnalysisResult] = useState<AnalyzeFunctieloonschaalDocumentOutput | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const { toast } = useToast();
+
+    // Set up the worker for pdf.js at runtime to avoid webpack import detection
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            // Use import.meta.url at runtime - webpack won't detect this pattern
+            try {
+                const workerPath = 'pdfjs-dist/build/pdf.worker.min.mjs';
+                pdfjs.GlobalWorkerOptions.workerSrc = new URL(workerPath, import.meta.url).toString();
+            } catch (e) {
+                // Fallback to CDN if import.meta.url fails
+                pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs';
+            }
+        }
+    }, []);
 
     const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
