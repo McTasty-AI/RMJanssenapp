@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase/server';
+import { validateAuthenticatedRequest } from '@/lib/auth/server-auth';
 
 function sanitizeName(name: string) {
   return name
@@ -31,6 +32,14 @@ function resolveBucketAndPrefix(path: string) {
 
 export async function POST(req: NextRequest) {
   try {
+    // Validate authenticated user
+    const validation = await validateAuthenticatedRequest(req);
+    if (!validation.valid) {
+      return validation.response;
+    }
+
+    const { adminClient: supabase, userId } = validation;
+
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     const path = (formData.get('path') as string | null) ?? null;
@@ -49,8 +58,6 @@ export async function POST(req: NextRequest) {
 
     const filename = `${Date.now()}-${sanitizeName(file.name)}`;
     const objectPath = prefix ? `${prefix}/${filename}` : filename;
-
-    const supabase = getAdminClient();
     const { error: uploadError } = await supabase.storage
       .from(bucket)
       .upload(objectPath, file, { contentType: file.type, upsert: false });
@@ -74,6 +81,14 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    // Validate authenticated user
+    const validation = await validateAuthenticatedRequest(req);
+    if (!validation.valid) {
+      return validation.response;
+    }
+
+    const { adminClient: supabase, userId } = validation;
+
     const { url } = await req.json();
     if (!url) {
       return NextResponse.json({ error: 'No file URL provided' }, { status: 400 });
@@ -99,8 +114,6 @@ export async function DELETE(req: NextRequest) {
     if (!ALLOWED_BUCKETS.has(bucket)) {
       return NextResponse.json({ error: `Bucket not allowed: ${bucket}` }, { status: 400 });
     }
-
-    const supabase = getAdminClient();
     const { error } = await supabase.storage.from(bucket).remove([objectPath]);
     if (error) {
       console.error('[UPLOAD API] Delete error:', error);

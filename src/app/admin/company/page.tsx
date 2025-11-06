@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Save, UploadCloud, Trash2 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { getAccessToken } from '@/lib/auth/client-token';
 
 export default function AdminCompanyPage() {
     const [loading, setLoading] = useState(true);
@@ -118,8 +119,16 @@ export default function AdminCompanyPage() {
         formData.append('path', 'company_assets/logo');
 
         try {
+            const token = await getAccessToken();
+            if (!token) {
+                throw new Error('Niet ingelogd');
+            }
+
             const response = await fetch('/api/upload', {
                 method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
                 body: formData,
             });
 
@@ -153,9 +162,17 @@ export default function AdminCompanyPage() {
 
         setIsUploading(true); // Reuse uploading state for deletion
         try {
+            const token = await getAccessToken();
+            if (!token) {
+                throw new Error('Niet ingelogd');
+            }
+
             const response = await fetch('/api/upload', {
                 method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
                 body: JSON.stringify({ url: logoUrl }),
             });
 
