@@ -9,7 +9,7 @@ export default function AdminGuard({ children }: { children: React.ReactNode }) 
   if (!isLoaded || !user || user.role !== 'admin') {
     return (
       <div className="flex flex-col min-h-screen">
-        <main className="flex-1 p-4 md:p-8 flex items-center justify-center">
+        <main className="flex-1 container mx-auto p-4 md:p-8 flex items-center justify-center">
           <div className="text-center">
             <p className="text-lg font-semibold">Toegang verifiëren...</p>
             <p className="text-muted-foreground">Een ogenblik geduld alstublieft.</p>
