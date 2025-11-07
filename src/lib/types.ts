@@ -14,7 +14,7 @@ export const statusTranslations: Record<DayStatus, string> = {
   onbetaald: "Onbetaald Verlof",
 };
 
-export const tollOptions = ["Geen", "BE", "DE", "BE/DE"] as const;
+export const tollOptions = ["Geen", "BE", "DE", "FR", "CH", "AT", "BE/DE"] as const;
 export type Toll = typeof tollOptions[number];
 
 export interface Time {
