@@ -40,7 +40,13 @@ const editUserSchema = z.object({
     return data.password === data.confirmPassword;
   }
   return true;
-}, { message: 'Wachtwoorden komen niet overeen.', path: ['confirmPassword'] });
+}, { message: 'Wachtwoorden komen niet overeen.', path: ['confirmPassword'] })
+.refine((data) => {
+  if (data.password && data.password.length > 0) {
+    return data.password.length >= 6;
+  }
+  return true;
+}, { message: 'Wachtwoord moet minimaal 6 tekens bevatten.', path: ['password'] });
 type EditUserFormData = z.infer<typeof editUserSchema>;
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -219,6 +225,7 @@ export default function UserDetailsPage() {
         try {
             // Exclude password fields if they are empty
             const { password, confirmPassword, ...dataToSave } = data as any;
+            const trimmedPassword = password?.trim() ?? '';
             
             const finalData: Partial<User> = {
                 ...dataToSave,
@@ -243,40 +250,63 @@ export default function UserDetailsPage() {
             if (finalData.salaryScaleStep === undefined || isNaN(finalData.salaryScaleStep)) delete finalData.salaryScaleStep;
 
             const payload = mapAppToSupabase(finalData);
-            // Update main fields directly via RLS (admin can update any profile)
+            // Update main fields directly via RLS (admin kan elk profiel bijwerken)
             const { error } = await supabase.from('profiles').update(payload).eq('id', userId);
             if (error) throw error;
 
-            // If role changed, also patch via privileged API to be safe
-            if (user && data.role && user.role !== data.role) {
+            const roleChanged = Boolean(user && data.role && user.role !== data.role);
+            const passwordChanged = trimmedPassword.length > 0;
+            const needsPrivilegedCall = roleChanged || passwordChanged;
+            let token: string | undefined;
+
+            if (needsPrivilegedCall) {
                 const { data: sessionData } = await supabase.auth.getSession();
-                const token = sessionData?.session?.access_token;
-                if (token) {
-                    const resp = await fetch('/api/admin/users/update-role', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                        body: JSON.stringify({ userId, role: data.role }),
-                    });
-                    if (!resp.ok) {
-                        const details = await resp.json().catch(() => undefined);
-                        throw new Error(details?.error || 'Rol bijwerken mislukt');
-                    }
+                token = sessionData?.session?.access_token;
+                if (!token) {
+                    throw new Error('Geen geldige sessie gevonden voor admin-actie. Log opnieuw in en probeer het opnieuw.');
                 }
             }
-            
-            // TODO: Call a cloud function to update password if it's provided
-            if (password) {
-                console.log("Wachtwoord update is nog niet geïmplementeerd in de backend.");
-                toast({ title: 'Wachtwoord niet gewijzigd', description: 'De interface is er, maar de backend functie voor het wijzigen van wachtwoorden moet nog worden geïmplementeerd.' });
+
+            if (roleChanged && token) {
+                const resp = await fetch('/api/admin/users/update-role', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ userId, role: data.role }),
+                });
+                if (!resp.ok) {
+                    const details = await resp.json().catch(() => undefined);
+                    throw new Error(details?.error || 'Rol bijwerken mislukt');
+                }
             }
 
-            toast({ title: "Medewerker bijgewerkt", description: "De gegevens zijn succesvol opgeslagen." });
-            form.reset(data); // Reset dirty state
-            // Zorg dat lokale state de nieuwe rol toont
-            setUser(prev => prev ? { ...prev, ...data } as User : prev);
+            if (passwordChanged && token) {
+                const resp = await fetch('/api/admin/users/update-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ userId, password: trimmedPassword }),
+                });
+                if (!resp.ok) {
+                    const details = await resp.json().catch(() => undefined);
+                    throw new Error(details?.error || 'Wachtwoord wijzigen mislukt');
+                }
+            }
+
+            const updates: string[] = [];
+            if (roleChanged) updates.push('rol');
+            if (passwordChanged) updates.push('wachtwoord');
+
+            toast({
+                title: 'Medewerker bijgewerkt',
+                description: updates.length
+                    ? `De ${updates.join(' en ')} ${updates.length > 1 ? 'zijn' : 'is'} succesvol opgeslagen.`
+                    : 'De gegevens zijn succesvol opgeslagen.',
+            });
+
+            form.reset({ ...data, password: '', confirmPassword: '' } as any); // Reset dirty state, wis wachtwoordvelden
+            setUser(prev => prev ? { ...prev, ...finalData, role: data.role ?? prev.role } as User : prev);
         } catch (error) {
-            console.error("Error updating user:", error);
-            toast({ variant: 'destructive', title: "Opslaan Mislukt" });
+            console.error('Error updating user:', error);
+            toast({ variant: 'destructive', title: 'Opslaan Mislukt', description: error instanceof Error ? error.message : undefined });
         }
     };
 
