@@ -14,6 +14,57 @@ import { createInvoiceOnApproval, findCustomerByLicensePlate } from '@/lib/invoi
 const LOGS_COLLECTION = 'weekly_logs';
 const LEAVE_COLLECTION = 'leave_requests';
 
+// Helper function - gets the last end mileage from previous week
+const getLastEndMileageFromPreviousWeek = async (weekStart: Date, userId: string): Promise<number> => {
+  // Calculate previous week
+  const previousWeekStart = addDays(weekStart, -7);
+  const previousWeekEnd = addDays(previousWeekStart, 6);
+  const previousYear = getYear(previousWeekStart);
+  const previousWeek = getISOWeek(previousWeekStart);
+  const previousWeekId = `${previousYear}-${previousWeek}`;
+  
+  // Fetch the previous week's log
+  const { data: previousWeeklyLog, error } = await supabase
+    .from('weekly_logs')
+    .select(`
+      *,
+      daily_logs (*)
+    `)
+    .eq('week_id', previousWeekId)
+    .eq('user_id', userId)
+    .single();
+
+  // If no previous week exists or error occurred, return 0
+  if (error && error.code === 'PGRST116') {
+    // PGRST116 = no rows found, which is fine for the first week
+    return 0;
+  }
+
+  if (error || !previousWeeklyLog || !previousWeeklyLog.daily_logs || !Array.isArray(previousWeeklyLog.daily_logs)) {
+    return 0;
+  }
+
+  // Get all days from previous week, sorted by date (Monday to Sunday)
+  const previousDays = (previousWeeklyLog.daily_logs as any[])
+    .map((dl: any) => ({
+      date: parseISO(dl.date),
+      endMileage: dl.end_mileage || 0,
+      status: dl.status,
+    }))
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  // Start from the last day (Sunday) and work backwards to find the last end mileage
+  // Include weekend days if they have an end mileage (driver worked on weekend)
+  for (let i = previousDays.length - 1; i >= 0; i--) {
+    const day = previousDays[i];
+    if (day.endMileage && day.endMileage > 0) {
+      return day.endMileage;
+    }
+  }
+
+  return 0;
+};
+
 // Helper function - generates empty week and fills in approved leave requests
 const generateEmptyWeek = async (date: Date, user: User, approvedLeaveRequests?: LeaveRequest[]): Promise<DailyLog[]> => {
   const weekStart = startOfWeek(date, { weekStartsOn: 1 });
@@ -22,9 +73,10 @@ const generateEmptyWeek = async (date: Date, user: User, approvedLeaveRequests?:
   // Fetch approved leave requests if not provided
   let leaveRequests = approvedLeaveRequests;
   if (!leaveRequests) {
+    // Only select needed fields for better performance
     const { data: leaveData } = await supabase
       .from('leave_requests')
-      .select('*')
+      .select('id, user_id, start_date, end_date, type, status, submitted_at')
       .eq('user_id', user.uid)
       .eq('status', 'approved');
     
@@ -43,6 +95,9 @@ const generateEmptyWeek = async (date: Date, user: User, approvedLeaveRequests?:
       rejectionReason: r.rejection_reason || undefined,
     })) as LeaveRequest[];
   }
+
+  // Get last end mileage from previous week (includes weekend if driver worked)
+  const lastEndMileage = await getLastEndMileageFromPreviousWeek(weekStart, user.uid!);
   
   const newDays: DailyLog[] = Array.from({ length: 7 }).map((_, i) => {
     const dayDate = addDays(weekStart, i);
@@ -80,6 +135,18 @@ const generateEmptyWeek = async (date: Date, user: User, approvedLeaveRequests?:
       status = 'onbetaald';
     }
 
+    // Set start mileage: use last end mileage from previous week for the first work day
+    // For subsequent days, it will be updated by the form logic when end mileage is entered
+    let startMileageValue = 0;
+    if (i === 0 && status === 'gewerkt' && lastEndMileage > 0) {
+      // First day (Monday) if it's a work day, use last end mileage from previous week
+      startMileageValue = lastEndMileage;
+    } else if (i > 0 && status === 'gewerkt') {
+      // For subsequent work days, try to find the end mileage from the previous day in this week
+      // This will be handled by the form logic, but we initialize to 0 here
+      startMileageValue = 0;
+    }
+
     return {
       date: dayDate.toISOString(),
       day: format(dayDate, 'EEEE', { locale: nl }).toLowerCase(),
@@ -87,7 +154,7 @@ const generateEmptyWeek = async (date: Date, user: User, approvedLeaveRequests?:
       startTime: { hour: 0, minute: 0 },
       endTime: { hour: 0, minute: 0 },
       breakTime: { hour: 0, minute: 0 },
-      startMileage: 0,
+      startMileage: startMileageValue,
       endMileage: 0,
       toll: 'Geen' as Toll,
       licensePlate: undefined,
@@ -280,14 +347,35 @@ export const useWeeklyLogs = (currentDate?: Date) => {
             return dateA - dateB;
           });
 
+        // Get last end mileage from previous week for potential use in merge
+        const lastEndMileage = await getLastEndMileageFromPreviousWeek(weekStart, user.uid!);
+        
+        // Helper function to merge days, ensuring start mileage is set correctly for first work day
+        const mergeDaysWithStartMileage = (finalDays: DailyLog[], existingDays: DailyLog[]) => {
+          return finalDays.map((finalDay, index) => {
+            const existingDay = existingDays.find((d: DailyLog) => {
+              const existingDateStr = d.date.includes('T') ? d.date.split('T')[0] : d.date;
+              const finalDateStr = finalDay.date.includes('T') ? finalDay.date.split('T')[0] : finalDay.date;
+              return existingDateStr === finalDateStr;
+            });
+            
+            if (existingDay) {
+              // If existing day has no start mileage but it's the first work day, use last end mileage
+              const mergedDay = { ...existingDay };
+              if (index === 0 && mergedDay.status === 'gewerkt' && (!mergedDay.startMileage || mergedDay.startMileage === 0) && lastEndMileage > 0) {
+                mergedDay.startMileage = lastEndMileage;
+              }
+              return mergedDay;
+            }
+            return finalDay;
+          });
+        };
+
         // If we don't have exactly 7 days, regenerate the week to ensure we have all days
         if (days.length !== 7) {
-          const finalDays = await generateEmptyWeek(currentDate, user);
-          // Merge with existing data if available
-          const mergedDays = finalDays.map(finalDay => {
-            const existingDay = days.find((d: DailyLog) => d.date === finalDay.date);
-            return existingDay || finalDay;
-          });
+          const finalDays = await generateEmptyWeek(currentDate, user, approvedLeaveRequests);
+          // Merge with existing data if available, ensuring start mileage is set correctly
+          const mergedDays = mergeDaysWithStartMileage(finalDays, days);
           setWeekData({
             weekId: weeklyLog.week_id,
             userId: weeklyLog.user_id,
@@ -302,12 +390,9 @@ export const useWeeklyLogs = (currentDate?: Date) => {
           const firstDayOfWeek = getDay(firstDayDate);
           if (firstDayOfWeek !== 1) {
             // First day is not Monday, regenerate the week
-            const finalDays = await generateEmptyWeek(currentDate, user);
-            // Merge with existing data if available
-            const mergedDays = finalDays.map(finalDay => {
-              const existingDay = days.find((d: DailyLog) => d.date === finalDay.date);
-              return existingDay || finalDay;
-            });
+            const finalDays = await generateEmptyWeek(currentDate, user, approvedLeaveRequests);
+            // Merge with existing data if available, ensuring start mileage is set correctly
+            const mergedDays = mergeDaysWithStartMileage(finalDays, days);
             setWeekData({
               weekId: weeklyLog.week_id,
               userId: weeklyLog.user_id,
@@ -317,10 +402,17 @@ export const useWeeklyLogs = (currentDate?: Date) => {
               submittedAt: weeklyLog.submitted_at,
             });
           } else {
+            // Even if we have 7 days, check if first work day needs start mileage from previous week
+            const updatedDays = days.map((day, index) => {
+              if (index === 0 && day.status === 'gewerkt' && (!day.startMileage || day.startMileage === 0) && lastEndMileage > 0) {
+                return { ...day, startMileage: lastEndMileage };
+              }
+              return day;
+            });
             setWeekData({
               weekId: weeklyLog.week_id,
               userId: weeklyLog.user_id,
-              days: days,
+              days: updatedDays,
               status: weeklyLog.status,
               remarks: weeklyLog.remarks || '',
               submittedAt: weeklyLog.submitted_at,

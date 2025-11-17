@@ -39,10 +39,10 @@ export const useAdminData = () => {
             }
         };
 
-        // Fetch users
+        // Fetch users - only select needed fields for better performance
         supabase
             .from('profiles')
-            .select('*')
+            .select('id, first_name, last_name, email, role, status, assigned_license_plates, salary_scale_group, salary_scale_step, employment_type, contract_hours, work_days, home_street, home_house_number, home_postal_code, home_city, station, has_travel_allowance, travel_distance, travel_allowance_rate')
             .order('first_name')
             .then(({ data, error }) => {
                 if (error) {
@@ -53,11 +53,13 @@ export const useAdminData = () => {
                 checkLoading();
             });
 
-        // Fetch weekly logs with daily logs
+        // Fetch weekly logs with daily logs - limit to recent weeks for better performance
+        const recentWeeksLimit = 100; // Only load last 100 weeks
         supabase
             .from('weekly_logs')
             .select('*, daily_logs (*)')
             .order('week_id', { ascending: false })
+            .limit(recentWeeksLimit)
             .then(({ data, error }) => {
                 if (error) {
                     console.error("Error fetching logs:", error);
@@ -224,10 +226,12 @@ export const useAdminData = () => {
                 checkLoading();
             });
 
-        // Fetch declarations
+        // Fetch declarations - limit to recent for better performance
         supabase
             .from('declarations')
             .select('*')
+            .order('submitted_at', { ascending: false })
+            .limit(500) // Limit to most recent 500 declarations
             .then(({ data, error }) => {
                 if (error) {
                     console.error("Error fetching declarations:", error);
@@ -237,10 +241,12 @@ export const useAdminData = () => {
                 checkLoading();
             });
 
-        // Fetch leave requests
+        // Fetch leave requests - only active/recent ones for better performance
         supabase
             .from('leave_requests')
             .select('*')
+            .order('submitted_at', { ascending: false })
+            .limit(200) // Limit to most recent 200 leave requests
             .then(({ data, error }) => {
                 if (error) {
                     console.error("Error fetching leave requests:", error);
@@ -250,10 +256,12 @@ export const useAdminData = () => {
                 checkLoading();
             });
 
-        // Fetch fines
+        // Fetch fines - limit to recent for better performance
         supabase
             .from('fines')
             .select('*')
+            .order('created_at', { ascending: false })
+            .limit(500) // Limit to most recent 500 fines
             .then(({ data, error }) => {
                 if (error) {
                     console.error("Error fetching fines:", error);

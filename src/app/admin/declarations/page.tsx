@@ -181,7 +181,10 @@ export default function AdminDeclarationsPage() {
             toast({
                 title: `Declaratie ${declarationStatusTranslations[newStatus]}`,
                 description: `De declaratie van ${declaration.userFirstName} is bijgewerkt.`
-            })
+            });
+            
+            // Trigger header refresh
+            window.dispatchEvent(new CustomEvent('admin-action-completed'));
         } catch (error) {
             console.error("Error updating status:", error);
             toast({ variant: "destructive", title: "Update Mislukt" })
@@ -228,6 +231,9 @@ export default function AdminDeclarationsPage() {
                 description: `De declaratie van ${declarationToReject.userFirstName} is afgekeurd.`
             });
             setIsRejectionDialogOpen(false);
+            
+            // Trigger header refresh
+            window.dispatchEvent(new CustomEvent('admin-action-completed'));
             setDeclarationToReject(null);
         } catch (error) {
             console.error("Error updating status:", error);

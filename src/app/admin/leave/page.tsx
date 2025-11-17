@@ -167,6 +167,9 @@ export default function AdminLeavePage() {
             await sendEmail(request.userEmail, subject, body);
 
             toast({ title: `Aanvraag ${leaveStatusTranslations[status]}` });
+            
+            // Trigger header refresh
+            window.dispatchEvent(new CustomEvent('admin-action-completed'));
         } catch (error) {
             console.error("Error updating status:", error);
             // Revert optimistic update on error

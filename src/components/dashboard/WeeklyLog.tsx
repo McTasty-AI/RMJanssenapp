@@ -1,7 +1,8 @@
 
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, memo } from 'react';
+import React from 'react';
 import { useForm, FormProvider, useFormContext } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { weeklyLogSchema, type WeeklyLogFormData } from '@/lib/schemas';
@@ -38,7 +39,7 @@ const isWeekLockedByTime = (weekDate: Date): boolean => {
   return isBefore(lockDate, today);
 };
 
-const TimeInput = ({ name, disabled }: { name: string, disabled: boolean }) => {
+const TimeInput = memo(({ name, disabled }: { name: string, disabled: boolean }) => {
     const { control } = useFormContext<WeeklyLogFormData>();
     return (
         <div className="flex gap-1 items-center">
@@ -92,18 +93,19 @@ const TimeInput = ({ name, disabled }: { name: string, disabled: boolean }) => {
             />
         </div>
     );
-};
+});
+TimeInput.displayName = 'TimeInput';
 
 
-const BreakTimeInput = ({ name, disabled }: { name: string, disabled: boolean }) => {
+const BreakTimeInput = memo(({ name, disabled }: { name: string, disabled: boolean }) => {
     const { control, getValues, setValue } = useFormContext<WeeklyLogFormData>();
     const value = getValues(name as any) || { hour: 0, minute: 0 };
     const totalMinutes = value.hour * 60 + value.minute;
 
-    const handleChange = (minutes: string) => {
+    const handleChange = useCallback((minutes: string) => {
         const numMinutes = parseInt(minutes, 10);
         setValue(name as any, { hour: Math.floor(numMinutes / 60), minute: numMinutes % 60 }, { shouldDirty: true, shouldValidate: true });
-    };
+    }, [name, setValue]);
     
     return (
         <FormField
@@ -131,18 +133,19 @@ const BreakTimeInput = ({ name, disabled }: { name: string, disabled: boolean })
             )}
         />
     );
-};
+});
+BreakTimeInput.displayName = 'BreakTimeInput';
 
-const MobileDayCard = ({ index, handlePlateChange, assignedPlates, formIsEditable }: { index: number, handlePlateChange: (index: number, plate: LicensePlate) => void, assignedPlates: LicensePlate[], formIsEditable: boolean }) => {
+const MobileDayCard = memo(({ index, handlePlateChange, assignedPlates, formIsEditable }: { index: number, handlePlateChange: (index: number, plate: LicensePlate) => void, assignedPlates: LicensePlate[], formIsEditable: boolean }) => {
     const { control, watch, setValue, trigger, getValues } = useFormContext<WeeklyLogFormData>();
     const dayData = watch(`days.${index}`);
     const { date, day, status, startMileage, endMileage } = dayData;
     const isWorkDay = status === 'gewerkt';
 
-    const workHours = calculateWorkHours(dayData);
-    const totalKm = (endMileage ?? 0) - (startMileage ?? 0);
+    const workHours = useMemo(() => calculateWorkHours(dayData), [dayData]);
+    const totalKm = useMemo(() => (endMileage ?? 0) - (startMileage ?? 0), [endMileage, startMileage]);
     
-    const handleStatusChange = (newStatus: DayStatus) => {
+    const handleStatusChange = useCallback((newStatus: DayStatus) => {
         setValue(`days.${index}.status`, newStatus);
         if (newStatus !== 'gewerkt') {
             setValue(`days.${index}.startTime`, { hour: 0, minute: 0 });
@@ -166,7 +169,7 @@ const MobileDayCard = ({ index, handlePlateChange, assignedPlates, formIsEditabl
              setValue(`days.${index}.startMileage`, lastMileage, { shouldDirty: true });
         }
         trigger(`days.${index}`);
-      };
+      }, [index, setValue, getValues, trigger]);
       
     const handleEndMileageChange = (value: string | number) => {
         const numericValue = value === '' ? 0 : Number(value);
@@ -385,7 +388,8 @@ const MobileDayCard = ({ index, handlePlateChange, assignedPlates, formIsEditabl
              </Card>
         </AccordionItem>
     );
-};
+});
+MobileDayCard.displayName = 'MobileDayCard';
 
 
 export function WeeklyLogForm({
@@ -393,11 +397,13 @@ export function WeeklyLogForm({
   onSave,
   currentUser,
   onWeekChange,
+  autoSaveRef,
 }: {
   weekData: WeeklyLogFormData;
   onSave: (data: WeeklyLogFormData, newStatus: WeeklyLogStatus) => Promise<void>;
   currentUser: User;
   onWeekChange: (direction: 'next' | 'prev') => void;
+  autoSaveRef?: React.MutableRefObject<(() => Promise<void>) | null>;
 }) {
   const form = useForm<WeeklyLogFormData>({
     resolver: zodResolver(weeklyLogSchema),
@@ -436,40 +442,73 @@ export function WeeklyLogForm({
       try {
           const data = getValues();
           await onSave(data, 'concept');
+          reset(getValues()); // Reset dirty state after auto-save
       } finally {
           isSavingRef.current = false;
       }
-  }, [onSave, getValues, isDirty, weekData]);
+  }, [onSave, getValues, isDirty, weekData, reset]);
 
+  // Auto-save on unmount if there are unsaved changes
   useEffect(() => {
-    // Only auto-save if form is dirty
-    if (!isDirty || !weekData) {
-        // Clear timer if form is not dirty
-        if (debounceTimerRef.current) {
-            clearTimeout(debounceTimerRef.current);
-            debounceTimerRef.current = null;
-        }
-        return;
-    }
-
-    // Clear existing timer if user makes another change
-    if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-    }
-
-    // Debounce: wait 5 seconds after last change before saving
-    debounceTimerRef.current = setTimeout(() => {
-        handleAutoSave();
-        debounceTimerRef.current = null;
-    }, 5000); 
-
     return () => {
-        if (debounceTimerRef.current) {
-            clearTimeout(debounceTimerRef.current);
-            debounceTimerRef.current = null;
-        }
+      // Cleanup: save when component unmounts if there are dirty changes
+      if (isDirty && !isSavingRef.current && weekData) {
+        // Use a synchronous flag to prevent multiple saves
+        isSavingRef.current = true;
+        const data = getValues();
+        // Use a fire-and-forget approach for unmount saves
+        onSave(data, 'concept').catch((error) => {
+          console.error('Error auto-saving on unmount:', error);
+        });
+      }
+      
+      // Clear any pending timers
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
+      }
     };
-  }, [watchedValues, isDirty, handleAutoSave, weekData]);
+  }, [isDirty, weekData, getValues, onSave]);
+
+  // Expose auto-save function via ref for parent to call
+  const autoSaveOnNavigation = useCallback(async () => {
+    if (isDirty && !isSavingRef.current && weekData) {
+      await handleAutoSave();
+    }
+  }, [isDirty, weekData, handleAutoSave]);
+
+  // Store the auto-save function in ref for parent access
+  useEffect(() => {
+    if (autoSaveRef) {
+      autoSaveRef.current = autoSaveOnNavigation;
+    }
+    return () => {
+      if (autoSaveRef) {
+        autoSaveRef.current = null;
+      }
+    };
+  }, [autoSaveOnNavigation, autoSaveRef]);
+
+  // Auto-save on page unload (browser close/navigation away)
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty && !isSavingRef.current && weekData) {
+        // Attempt to save synchronously (limited by browser, but we try)
+        // Note: Modern browsers may not allow synchronous operations, so this is best effort
+        isSavingRef.current = true;
+        const data = getValues();
+        // Use sendBeacon or similar for better reliability
+        // For now, we'll just prevent navigation if there are unsaved changes
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isDirty, weekData, getValues]);
 
   const handleManualSave = async () => {
     const data = getValues();
@@ -981,9 +1020,11 @@ export function WeeklyLogForm({
   );
 }
 
-export default function WeeklyLog({ selectedDate, onDateChange }: { selectedDate: Date, onDateChange: (date: Date) => void }) {
+export default function WeeklyLog({ selectedDate, onDateChange, autoSaveRef: externalAutoSaveRef }: { selectedDate: Date, onDateChange: (date: Date) => void, autoSaveRef?: React.MutableRefObject<(() => Promise<void>) | null> }) {
   const { user, isLoaded: authIsLoaded } = useAuth();
   const { saveLog, isLoaded, weekData } = useWeeklyLogs(selectedDate);
+  const internalAutoSaveRef = useRef<(() => Promise<void>) | null>(null);
+  const autoSaveRef = externalAutoSaveRef || internalAutoSaveRef;
 
   const handleSave = useCallback(async (data: WeeklyLogFormData, newStatus: WeeklyLogStatus) => {
     if(!user || !weekData) return;
@@ -1036,6 +1077,7 @@ export default function WeeklyLog({ selectedDate, onDateChange }: { selectedDate
         onSave={handleSave}
         currentUser={user}
         onWeekChange={handleWeekChange}
+        autoSaveRef={autoSaveRef}
       />
     </div>
   );

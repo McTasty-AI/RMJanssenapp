@@ -8,7 +8,7 @@ import { mapSupabaseToApp } from '@/lib/utils';
 
 // Cache voor profile data om snellere initial load te krijgen
 const profileCache = new Map<string, { data: User; timestamp: number }>();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minuten
+const CACHE_TTL = 15 * 60 * 1000; // 15 minuten (verhoogd voor snellere refresh)
 
 export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -72,21 +72,21 @@ export const useAuth = () => {
         return result;
       })();
 
-      const syncPromise = sessionToken 
-        ? fetch('/api/auth/sync', {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${sessionToken}` },
-            keepalive: true,
-          }).catch(() => null) // Niet blokkerend - fail silently
-        : Promise.resolve(null);
+      // Sync gebeurt parallel en blokkeert niet
+      if (sessionToken) {
+        fetch('/api/auth/sync', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${sessionToken}` },
+          keepalive: true,
+        }).catch(() => null); // Niet blokkerend - fail silently
+      }
 
-      // Wacht alleen op profile, sync gebeurt parallel
+      // Wacht alleen op profile met zeer korte timeout voor snellere UX
       const resp1 = await withTimeout<any>(
         profilePromise as Promise<any>,
-        8000,
+        2000, // 2 seconden timeout - zeer agressief voor snelle feedback
         { data: null }
       );
-      // Sync gebeurt parallel en blokkeert niet - niet awaiten (al een catch op regel 80)
 
       const { data } = resp1 || { data: null };
 
@@ -112,7 +112,7 @@ export const useAuth = () => {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${sessionToken}` },
           }),
-          8000,
+          3000, // Verkort van 8s naar 3s
           null
         );
 
@@ -142,7 +142,7 @@ export const useAuth = () => {
         
         const profileAfterInsert = await withTimeout<any>(
           profileAfterInsertPromise as Promise<any>,
-          8000,
+          2000, // Verkort van 8s naar 2s
           { data: null }
         );
 
@@ -225,43 +225,146 @@ export const useAuth = () => {
     if (isLoaded) return;
     const timer = setTimeout(() => {
       console.warn('[auth] Safety timeout reached; proceeding without user.');
+      // If we have authUser but no user yet, create minimal fallback
+      if (authUser && !user) {
+        const fallback = buildFallbackUser(authUser.id, authUser.email);
+        setUser(fallback);
+      }
       setIsLoaded(true);
       loadingRef.current = false;
-    }, 5000); // 5s fallback (verkort van 8s voor snellere UX)
+    }, 500); // 500ms fallback - zeer agressief voor snelle UX
     return () => clearTimeout(timer);
-  }, [isLoaded]);
+  }, [isLoaded, authUser, user]);
 
   useEffect(() => {
     setIsLoaded(false);
     loadingRef.current = false;
     
-    // Prime cookie sync but do not decide UI yet; wait for INITIAL_SESSION event
-    // Dit gebeurt parallel en blokkeert niet
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    // Check session immediately instead of waiting for INITIAL_SESSION event
+    // This speeds up initial load significantly on refresh
+    const initAuth = async () => {
       try {
-        const token = session?.access_token;
-        await fetch('/api/auth/sync', {
-          method: token ? 'POST' : 'DELETE',
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          keepalive: true,
-        });
-      } catch {}
-    });
+        // Get session with timeout to prevent long blocking
+        const sessionPromise = supabase.auth.getSession();
+        const { data: { session }, error } = await withTimeout<any>(
+          sessionPromise as Promise<any>,
+          1000, // 1 second max wait for session
+          { data: { session: null }, error: null }
+        );
+        
+        // Prime cookie sync in background - don't wait for it
+        if (session?.access_token) {
+          fetch('/api/auth/sync', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${session.access_token}` },
+            keepalive: true,
+          }).catch(() => {});
+        } else {
+          fetch('/api/auth/sync', {
+            method: 'DELETE',
+            keepalive: true,
+          }).catch(() => {});
+        }
+
+        if (!session?.user) {
+          setUser(null);
+          setAuthUser(null);
+          setIsLoaded(true);
+          return;
+        }
+
+        setAuthUser(session.user);
+        
+        // Check cache first - this is the fastest path (instant)
+        const cached = profileCache.get(session.user.id);
+        if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+          // Use cached data immediately - fastest possible path
+          setUser(cached.data);
+          setIsLoaded(true);
+          // Load fresh data in background without blocking
+          loadUserProfileFresh(session.user.id, session.access_token).catch(() => {});
+          return;
+        }
+
+        // No cache - unblock UI immediately with optimistic user
+        // This allows pages to render while we fetch actual profile data
+        const optimisticUser = {
+          uid: session.user.id,
+          email: session.user.email || '',
+          firstName: '',
+          lastName: '',
+          role: 'user' as 'admin' | 'user', // Default to 'user' - safe fallback
+          status: 'active' as 'active' | 'inactive',
+        } as User;
+        
+        // Unblock UI IMMEDIATELY - no waiting
+        setUser(optimisticUser);
+        setIsLoaded(true);
+        
+        // Now do fast role check in background
+        const fastRoleCheck = async () => {
+          try {
+            const rolePromise = supabase
+              .from('profiles')
+              .select('role, status')
+              .eq('id', session.user.id)
+              .maybeSingle();
+
+            const roleResult = await withTimeout<any>(
+              rolePromise as Promise<any>,
+              1000, // 1 second timeout
+              { data: null }
+            );
+
+            const roleData = roleResult?.data;
+
+            if (roleData) {
+              // Update with actual role/status immediately
+              const minimalUser = {
+                ...optimisticUser,
+                role: roleData.role as 'admin' | 'user',
+                status: roleData.status as 'active' | 'inactive',
+              } as User;
+              
+              setUser(minimalUser);
+              
+              // Now load full profile in background
+              loadUserProfile(session.user.id, session.access_token).catch(() => {});
+            } else {
+              // No profile found - load full profile in background
+              loadUserProfile(session.user.id, session.access_token).catch(() => {});
+            }
+          } catch (error) {
+            // Fast check failed - load full profile in background
+            console.debug('[useAuth] Fast role check failed, loading full profile:', error);
+            loadUserProfile(session.user.id, session.access_token).catch(() => {});
+          }
+        };
+
+        // Start fast role check in background - UI is already unblocked
+        fastRoleCheck();
+      } catch (error) {
+        console.error('[useAuth] Init error:', error);
+        // Even on error, unblock UI immediately
+        if (authUser) {
+          const fallback = buildFallbackUser(authUser.id, authUser.email);
+          setUser(fallback);
+        } else {
+          setUser(null);
+          setAuthUser(null);
+        }
+        setIsLoaded(true);
+      }
+    };
+
+    initAuth();
 
     // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Skip INITIAL_SESSION since we already handled it above
       if (event === 'INITIAL_SESSION') {
-        if (session?.user) {
-          setAuthUser(session.user);
-          // Geef token door voor parallelle processing
-          await loadUserProfile(session.user.id, session.access_token);
-        } else {
-          setUser(null);
-          setAuthUser(null);
-          setIsLoaded(true);
-        }
         return;
       }
       
@@ -309,7 +412,7 @@ export const useAuth = () => {
     return () => {
       subscription.unsubscribe();
     };
-  }, [loadUserProfile]);
+  }, [loadUserProfile, loadUserProfileFresh]);
 
   // Realtime update of role/status changes; refresh profile when the row changes
   useEffect(() => {

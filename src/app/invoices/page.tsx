@@ -109,10 +109,12 @@ export default function InvoicesPage() {
         setLoading(true);
 
         const fetchInvoices = async () => {
+            // Limit to most recent invoices for better performance
             const { data, error } = await supabase
                 .from('invoices')
                 .select('*')
-                .order('created_at', { ascending: false });
+                .order('created_at', { ascending: false })
+                .limit(500); // Limit to most recent 500 invoices
             if (!isMounted) return;
             if (error) {
                 console.error('Error fetching invoices:', error);
@@ -124,9 +126,10 @@ export default function InvoicesPage() {
             const customerIds = Array.from(new Set(base.map(i => i.customerId).filter(Boolean)));
             let customersMap = new Map<string, Customer>();
             if (customerIds.length > 0) {
+                // Only select needed fields for better performance
                 const { data: custRows, error: custErr } = await supabase
                     .from('customers')
-                    .select('*')
+                    .select('id, company_name, street, house_number, postal_code, city')
                     .in('id', customerIds);
                 if (!custErr) {
                     (custRows || []).forEach(r => {

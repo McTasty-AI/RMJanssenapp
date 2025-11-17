@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import type { Fine, FinePaidBy } from '@/lib/types';
 import { finePaidByTranslations } from '@/lib/types';
 import { useUserCollection } from '@/hooks/use-user-collection';
@@ -14,6 +14,9 @@ import { Building, User as UserIcon, AlertTriangle, BookText } from 'lucide-reac
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase/client';
+import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/hooks/use-auth';
+import { mapSupabaseToApp } from '@/lib/utils';
 
 const FineBadge = ({ paidBy }: { paidBy: FinePaidBy }) => {
     const variant = paidBy === 'company' ? 'secondary' : 'default';
@@ -31,6 +34,17 @@ export default function FinesPage() {
     const [currentYear] = useState(new Date().getFullYear());
     const [policyText, setPolicyText] = useState<string | null>(null);
     const [loadingPolicy, setLoadingPolicy] = useState(true);
+    const { toast } = useToast();
+    const { user, isLoaded } = useAuth();
+    const knownFineIdsRef = useRef<Set<string>>(new Set());
+
+    // Track known fine IDs to detect new ones
+    useEffect(() => {
+        if (fines && fines.length > 0) {
+            const currentIds = new Set(fines.map(f => f.id));
+            knownFineIdsRef.current = currentIds;
+        }
+    }, [fines]);
 
     useEffect(() => {
         const fetchPolicy = async () => {
@@ -60,6 +74,85 @@ export default function FinesPage() {
         };
         fetchPolicy();
     }, []);
+
+    // Listen for new fines assigned to the current user
+    useEffect(() => {
+        if (!isLoaded || !user || user.role === 'admin') return;
+
+        let active = true;
+
+        // Subscribe to new fines for this user
+        const channel = supabase
+            .channel(`user-fines-${user.uid}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'fines',
+                    filter: `user_id=eq.${user.uid}`,
+                },
+                async (payload) => {
+                    if (!active) return;
+
+                    // Check if this is a truly new fine (not already known)
+                    const newFineId = payload.new.id as string;
+                    if (knownFineIdsRef.current.has(newFineId)) {
+                        return; // Already known, skip notification
+                    }
+
+                    // Add to known IDs
+                    knownFineIdsRef.current.add(newFineId);
+
+                    // Get the full fine data including receipt URL if needed
+                    try {
+                        const { data: fineData, error: fetchError } = await supabase
+                            .from('fines')
+                            .select('*')
+                            .eq('id', newFineId)
+                            .single();
+
+                        if (fetchError || !fineData) {
+                            console.error('Error fetching new fine:', fetchError);
+                            return;
+                        }
+
+                        // Generate receipt URL if available
+                        let receiptUrl: string | undefined = undefined;
+                        if (fineData.receipt_path) {
+                            try {
+                                const { data: signedData } = await supabase.storage
+                                    .from('fines')
+                                    .createSignedUrl(fineData.receipt_path, 3600);
+                                receiptUrl = signedData?.signedUrl;
+                            } catch (err) {
+                                console.debug('Error generating signed URL:', err);
+                            }
+                        }
+
+                        const fine = mapSupabaseToApp<Fine>(fineData) as any;
+                        if (receiptUrl) {
+                            fine.receiptUrl = receiptUrl;
+                        }
+
+                        // Show toast notification
+                        toast({
+                            title: 'Nieuwe boete toegewezen',
+                            description: `Er is een nieuwe boete toegewezen: €${fine.amount.toFixed(2)} - ${fine.reason || 'Geen reden opgegeven'}`,
+                            variant: 'destructive',
+                        });
+                    } catch (error) {
+                        console.error('Error processing new fine notification:', error);
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            active = false;
+            channel.unsubscribe();
+        };
+    }, [user, isLoaded, toast]);
 
     const yearlyFines = useMemo(() => {
         const start = startOfYear(new Date(currentYear, 0, 1));

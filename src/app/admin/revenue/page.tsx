@@ -96,11 +96,12 @@ export default function RevenuePage() {
 
         const fetchAll = async () => {
             try {
+                // Limit queries for better performance
                 const [invRes, piRes, custRes, supRes, finRes] = await Promise.all([
-                    supabase.from('invoices').select('*').order('created_at', { ascending: false }),
-                    supabase.from('purchase_invoices').select('*').order('created_at', { ascending: false }),
-                    supabase.from('customers').select('*'),
-                    supabase.from('suppliers').select('*'),
+                    supabase.from('invoices').select('*').order('created_at', { ascending: false }).limit(1000),
+                    supabase.from('purchase_invoices').select('*').order('created_at', { ascending: false }).limit(1000),
+                    supabase.from('customers').select('id, company_name, mileage_rate_type'),
+                    supabase.from('suppliers').select('id, company_name'),
                     supabase.from('financial_settings').select('*').eq('id', 'main').maybeSingle(),
                 ]);
 

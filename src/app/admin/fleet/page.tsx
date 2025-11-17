@@ -86,11 +86,13 @@ export default function AdminFleetPage() {
             checkLoading();
         };
         const fetchLogs = async () => {
+            // Limit to recent approved weeks for better performance
             const { data, error } = await supabase
                 .from('weekly_logs')
                 .select('*, daily_logs(*)')
                 .eq('status', 'approved')
-                .order('week_id', { ascending: false });
+                .order('week_id', { ascending: false })
+                .limit(100); // Only load last 100 approved weeks
             if (error) { console.error('Error fetching logs:', error); }
             const mapped: WeeklyLog[] = (data || []).map((w: any) => ({
                 weekId: w.week_id,
@@ -115,17 +117,20 @@ export default function AdminFleetPage() {
             checkLoading();
         };
         const fetchStatuses = async () => {
-            const { data } = await supabase.from('vehicle_statuses').select('*').order('label');
+            // Only select needed fields
+            const { data } = await supabase.from('vehicle_statuses').select('id, label, is_default').order('label');
             setStatuses(((data || []).map(r => ({ id: r.id, label: r.label, isDefault: r.is_default })) as VehicleStatusOption[]));
             checkLoading();
         };
         const fetchUsers = async () => {
-            const { data } = await supabase.from('profiles').select('*').order('first_name');
+            // Only select needed fields for better performance
+            const { data } = await supabase.from('profiles').select('id, first_name, last_name, email, assigned_license_plates').order('first_name');
             setUsers(((data || []).map(r => { const base = mapSupabaseToApp(r) as any; return { ...base, uid: r.id } as User; })) as User[]);
             checkLoading();
         };
         const fetchCustomers = async () => {
-            const { data } = await supabase.from('customers').select('*').order('company_name');
+            // Only select needed fields for better performance
+            const { data } = await supabase.from('customers').select('id, company_name').order('company_name');
             setCustomers(((data || []).map(r => { const base = mapSupabaseToApp(r) as any; return { ...base, id: r.id } as Customer; })) as Customer[]);
             checkLoading();
         };

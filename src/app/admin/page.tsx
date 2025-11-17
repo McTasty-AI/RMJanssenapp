@@ -75,10 +75,11 @@ export default function AdminPage() {
 
         const refreshCounts = async () => {
             try {
+                // Use id-only queries for faster count - much faster than selecting all columns
                 const [{ count: declCount }, { count: leaveCount }, { count: weekCount }] = await Promise.all([
-                    supabase.from('declarations').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-                    supabase.from('leave_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-                    supabase.from('weekly_logs').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+                    supabase.from('declarations').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+                    supabase.from('leave_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+                    supabase.from('weekly_logs').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
                 ]);
                 if (!active) return;
                 setPendingDeclarations(declCount || 0);
@@ -98,9 +99,10 @@ export default function AdminPage() {
                 const relevantIds = (custRows || []).map(r => r.id);
                 if (!active) return;
                 if (relevantIds.length === 0) { setRatesNeedAttention(false); return; }
+                // Use id-only query for faster count
                 const { count } = await supabase
                     .from('weekly_rates')
-                    .select('*', { count: 'exact', head: true })
+                    .select('id', { count: 'exact', head: true })
                     .eq('week_id', weekId)
                     .in('customer_id', relevantIds);
                 setRatesNeedAttention((count || 0) < relevantIds.length);

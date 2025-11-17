@@ -336,6 +336,8 @@ export default function AdminWeekstatesPage() {
         
         if (success) {
             downloadWeekAsExcel(log, driver);
+            // Trigger header refresh
+            window.dispatchEvent(new CustomEvent('admin-action-completed'));
             return true;
         } else {
             // Revert optimistic update on error

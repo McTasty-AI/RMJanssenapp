@@ -191,3 +191,5 @@ await supabase.from('users').insert([data1, data2]);
 
 
 
+
+
