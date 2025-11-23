@@ -24,8 +24,11 @@ const nextConfig: NextConfig = {
         fs: false,
       };
     }
-    // ✅ Voorkom dat Next blokkeert op ESM worker
-    config.externals = [...(config.externals || []), "pdfjs-dist/build/pdf.worker.min.mjs"];
+    // Remove the external config for pdf worker so webpack can bundle it
+    // This allows the worker to be loaded locally instead of from CDN
+    config.externals = (config.externals || []).filter(
+      (external: any) => !(typeof external === 'string' && external.includes('pdf.worker'))
+    );
     return config;
   },
   // Turbopack configuration for development builds

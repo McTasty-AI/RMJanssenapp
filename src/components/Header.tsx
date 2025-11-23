@@ -33,6 +33,27 @@ export default function Header() {
   const [pendingLeaveRequests, setPendingLeaveRequests] = useState(0);
   const [newFinesCount, setNewFinesCount] = useState(0);
 
+  // Early guard: if local session is stale (invalid refresh token), sign out and redirect.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { error } = await supabase.auth.getUser();
+        if (!active) return;
+        if (error) {
+          const msg = (error.message || '').toLowerCase();
+          if (msg.includes('invalid refresh token') || msg.includes('refresh token not found')) {
+            try { await supabase.auth.signOut(); } catch {}
+            if (active) router.replace('/login');
+          }
+        }
+      } catch (_) {
+        // ignore
+      }
+    })();
+    return () => { active = false; };
+  }, [router]);
+
   useEffect(() => {
     if (!(isLoaded && user?.role === 'admin')) {
       setPendingWeekstates(0);

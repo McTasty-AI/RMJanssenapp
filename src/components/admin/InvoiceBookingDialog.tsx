@@ -83,9 +83,30 @@ export function InvoiceBookingDialog({
         }
 
         if (isOpen && initialInvoice?.fileDataUri) {
+            // Fetch PDF from signed URL and create File object
             fetch(initialInvoice.fileDataUri)
-                .then(res => res.blob())
-                .then(blob => setFileBlob(new File([blob], "invoice.pdf", { type: blob.type })));
+                .then(res => {
+                    if (!res.ok) {
+                        throw new Error(`Failed to fetch PDF: ${res.status} ${res.statusText}`);
+                    }
+                    return res.blob();
+                })
+                .then(blob => {
+                    console.log('PDF blob loaded:', {
+                        size: blob.size,
+                        type: blob.type,
+                        url: initialInvoice.fileDataUri
+                    });
+                    
+                    // Ensure blob type is correct
+                    const mimeType = blob.type || 'application/pdf';
+                    const file = new File([blob], "invoice.pdf", { type: mimeType });
+                    setFileBlob(file);
+                })
+                .catch(error => {
+                    console.error('Error loading PDF file:', error);
+                    setFileBlob(null);
+                });
         } else {
             setFileBlob(null);
         }
