@@ -544,5 +544,26 @@ left join purchase_invoice_lines pil on pil.purchase_invoice_id = pi.id
 group by v.id, v.license_plate;
 
 -- =====================================================
+-- Tol Entries (geïmporteerde tol per dag/kenteken/land)
+-- =====================================================
+create table if not exists toll_entries (
+  id uuid primary key default gen_random_uuid(),
+  country text not null,            -- Land waar tol is betaald (bijv. 'DE', 'BE', 'FR')
+  license_plate text not null,      -- Kenteken dat gereden heeft
+  usage_date date not null,         -- Datum gebruik
+  amount numeric not null,          -- Bedrag excl. BTW
+  vat_rate numeric not null,        -- BTW percentage (bijv. 21)
+  week_id text,                     -- Afgeleide week-id 'YYYY-WW' voor groepering/filters
+  source text,                      -- Optioneel: bron of bestandsnaam Excel
+  applied_invoice_id uuid references invoices(id) on delete set null, -- Indien toegepast op factuur
+  applied_at timestamptz,           -- Tijdstip van koppeling
+  created_at timestamptz not null default now()
+);
+create index if not exists toll_entries_license_idx on toll_entries(license_plate);
+create index if not exists toll_entries_usage_date_idx on toll_entries(usage_date);
+create index if not exists toll_entries_week_idx on toll_entries(week_id);
+create index if not exists toll_entries_applied_idx on toll_entries(applied_invoice_id);
+
+-- =====================================================
 -- RLS wordt geconfigureerd in rls.sql
 -- =====================================================

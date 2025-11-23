@@ -353,14 +353,14 @@ export default function UserDetailsPage() {
                                 <TabsContent value="account" className="pt-6 space-y-6">
                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <FormField control={form.control} name="firstName" render={({ field }) => (
-                                            <FormItem><FormLabel>Voornaam</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                                            <FormItem><FormLabel>Voornaam</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                                         )} />
                                         <FormField control={form.control} name="lastName" render={({ field }) => (
-                                            <FormItem><FormLabel>Achternaam</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+                                            <FormItem><FormLabel>Achternaam</FormLabel><FormControl><Input {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                                         )} />
                                      </div>
                                       <FormField control={form.control} name="email" render={({ field }) => (
-                                        <FormItem><FormLabel>E-mailadres</FormLabel><FormControl><Input type="email" {...field} disabled /></FormControl><FormMessage /></FormItem>
+                                        <FormItem><FormLabel>E-mailadres</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ''} disabled /></FormControl><FormMessage /></FormItem>
                                     )} />
                                      <FormField
                                         control={form.control}
@@ -391,10 +391,10 @@ export default function UserDetailsPage() {
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <FormField control={form.control} name="password" render={({ field }) => (
-                                            <FormItem><FormLabel>Nieuw Wachtwoord</FormLabel><FormControl><Input type="password" {...field} /></FormControl><FormMessage /></FormItem>
+                                            <FormItem><FormLabel>Nieuw Wachtwoord</FormLabel><FormControl><Input type="password" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                                         )} />
                                         <FormField control={form.control} name="confirmPassword" render={({ field }) => (
-                                            <FormItem><FormLabel>Bevestig Wachtwoord</FormLabel><FormControl><Input type="password" {...field} /></FormControl><FormMessage /></FormItem>
+                                            <FormItem><FormLabel>Bevestig Wachtwoord</FormLabel><FormControl><Input type="password" {...field} value={field.value ?? ''} /></FormControl><FormMessage /></FormItem>
                                         )} />
                                     </div>
                                 </TabsContent>

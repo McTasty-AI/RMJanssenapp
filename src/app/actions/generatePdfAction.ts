@@ -131,6 +131,13 @@ export async function generatePdfAction(invoice: Omit<Invoice, 'id' | 'status' |
     let weekTotalHours = 0;
     let weekTotalKms = 0;
 
+    const pushSpacerRow = () => {
+        // Add a visual spacer row (blank) between day total and next day
+        tableBody.push([
+            { content: '', colSpan: 5, styles: { fillColor: [255,255,255], textColor: [255,255,255] } }
+        ]);
+    };
+
     const processDaySubtotal = () => {
         if (invoice.showDailyTotals && currentDay && daySubtotal > 0) {
             tableBody.push([
@@ -144,11 +151,17 @@ export async function generatePdfAction(invoice: Omit<Invoice, 'id' | 'status' |
                     styles: { halign: 'right', fontStyle: 'bold' },
                 }
             ]);
+            // Spacer after total
+            pushSpacerRow();
         }
         daySubtotal = 0;
     };
 
-    for (const line of invoice.lines) {
+    // Split lines: non-toll first (by day), then toll lines section at the bottom
+    const nonTollLines = (invoice.lines || []).filter(l => !(l.description || '').toLowerCase().includes('tol'));
+    const tollLines = (invoice.lines || []).filter(l => (l.description || '').toLowerCase().includes('tol'));
+
+    for (const line of nonTollLines) {
         const lineDescription = line.description?.toLowerCase() || '';
         const dayMatch = lineDescription.match(/^(maandag|dinsdag|woensdag|donderdag|vrijdag|zaterdag|zondag)/i);
         const dayName = dayMatch ? dayMatch[0].charAt(0).toUpperCase() + dayMatch[0].slice(1) : '';
@@ -189,6 +202,32 @@ export async function generatePdfAction(invoice: Omit<Invoice, 'id' | 'status' |
         }
     }
     processDaySubtotal(); // Process the last day
+
+    // Append Tol section at bottom
+    if (tollLines.length > 0) {
+        tableBody.push([
+            { content: 'Tol', colSpan: 5, styles: { halign: 'left', fontStyle: 'bold', fillColor: [230,230,230], textColor: 20 } }
+        ]);
+        let tollTotal = 0;
+        for (const line of tollLines) {
+            const unitPrice = typeof line.unitPrice === 'string' ? parseFloat(line.unitPrice) : line.unitPrice || 0;
+            const lineTotal = (line.quantity || 0) * (unitPrice || 0);
+            tollTotal += lineTotal;
+            const unitPriceString = `€ ${unitPrice.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+            tableBody.push([
+                line.description,
+                (line.quantity || 0).toLocaleString('nl-NL'),
+                unitPriceString,
+                `${line.vatRate}%`,
+                formatCurrency(lineTotal),
+            ]);
+        }
+        tableBody.push([
+            { content: 'Totaal tol', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold' } },
+            { content: formatCurrency(tollTotal), styles: { halign: 'right', fontStyle: 'bold' } }
+        ]);
+        pushSpacerRow();
+    }
 
     if (invoice.showWeeklyTotals) {
         tableBody.push([

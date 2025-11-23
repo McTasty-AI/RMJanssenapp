@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Utility functions to generate invoice lines from weekly log data without AI
  */
 
@@ -55,6 +55,10 @@ function calculateMileageRate(
     return customer.mileageRate || 0.56;
 }
 
+function round2(n: number): number {
+    return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
 function calculateHourlyRate(
     customer: Customer,
     dayName: string
@@ -63,12 +67,12 @@ function calculateHourlyRate(
     const dayLower = dayName.toLowerCase();
     
     if (dayLower === 'zaterdag' && customer.saturdaySurcharge) {
-        return baseRate * (customer.saturdaySurcharge / 100);
+        return round2(baseRate * (customer.saturdaySurcharge / 100));
     } else if (dayLower === 'zondag' && customer.sundaySurcharge) {
-        return baseRate * (customer.sundaySurcharge / 100);
+        return round2(baseRate * (customer.sundaySurcharge / 100));
     }
     
-    return baseRate;
+    return round2(baseRate);
 }
 
 function formatBreakTime(breakTime: { hour: number; minute: number }): string {
@@ -123,8 +127,8 @@ export function generateInvoiceLines(
             lines.push({
                 quantity: workHours,
                 description,
-                unitPrice: hourlyRate,
-                total: workHours * hourlyRate,
+                unitPrice: round2(hourlyRate),
+                total: round2(workHours * hourlyRate),
                 vatRate,
             });
         }
@@ -146,7 +150,7 @@ export function generateInvoiceLines(
             if (day.toll === 'BE' || day.toll === 'BE/DE') {
                 lines.push({
                     quantity: 0,
-                    description: `${dateLabel}\nTol België${tripNumberSuffix}`,
+                    description: `${dateLabel}\nTol België«${tripNumberSuffix}`,
                     unitPrice: 0,
                     total: 0,
                     vatRate,
@@ -178,4 +182,5 @@ export function generateInvoiceLines(
 
     return lines;
 }
+
 

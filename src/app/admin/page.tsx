@@ -141,6 +141,12 @@ export default function AdminPage() {
                     description="Krijg inzicht in de financiële status."
                 />
                 <AdminCard 
+                    href="/admin/toll"
+                    icon={Receipt}
+                    title="Toloverzichten"
+                    description="Upload tol-overzichten en koppel aan facturen."
+                />
+                <AdminCard 
                     href="/invoices"
                     icon={ArrowUp}
                     title="Verkoopfacturen"

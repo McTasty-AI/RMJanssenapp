@@ -294,6 +294,20 @@ export interface CompanyProfile {
     logoUrl: string;
 }
 
+export interface TollEntry {
+    id: string;
+    country: string;       // Land-code of naam
+    licensePlate: string;  // Kenteken
+    usageDate: string;     // ISO datum (YYYY-MM-DD)
+    amount: number;        // Exclusief BTW
+    vatRate: number;       // Percentage, bijv. 21
+    weekId?: string;       // Afgeleide week-id 'YYYY-WW'
+    source?: string;       // Bron/bestandsnaam
+    appliedInvoiceId?: string | null; // Koppeling aan factuur
+    appliedAt?: string | null;        // ISO timestamp
+    createdAt?: string;    // ISO timestamp
+}
+
 export interface Supplier {
   id: string; // Firestore document ID
   companyName: string;

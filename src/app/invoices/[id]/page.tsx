@@ -27,12 +27,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { invoiceStatusTranslations } from '@/lib/types';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { generatePdfAction } from '@/app/actions/generatePdfAction';
 
 
 const formatCurrency = (amount: number) => {
-    return `€ ${amount.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(amount ?? 0);
 }
 
 const StatusBadge = ({ status, isCredit }: { status: InvoiceStatus, isCredit: boolean }) => {
@@ -59,6 +60,7 @@ export default function EditInvoicePage() {
     const [isCreatingCredit, setIsCreatingCredit] = useState(false);
     const [nextInvoiceNumber, setNextInvoiceNumber] = useState('');
     const [showSentWarning, setShowSentWarning] = useState(false);
+    // Tolregels toevoegen gebeurt voortaan alleen via Toloverzichten
 
     const form = useForm<InvoiceFormData>({
         resolver: zodResolver(invoiceFormSchema),
@@ -140,13 +142,57 @@ export default function EditInvoicePage() {
                     customer = { companyName: '-', street: '', houseNumber: '', postalCode: '', city: '' } as any;
                 }
 
-                const lines: InvoiceLine[] = (invRow.invoice_lines || []).map((l: any) => ({
-                    description: l.description,
-                    quantity: Number(l.quantity) || 0,
-                    unitPrice: Number(l.unit_price) || 0,
-                    vatRate: Number(l.vat_rate) || 21,
-                    total: Number(l.total) || (Number(l.quantity) || 0) * (Number(l.unit_price) || 0),
-                }));
+                // Map raw rows and then sort by Day (Ma..Zo) and within day by kind: kilometers -> uren -> tol
+                const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+                const rawLines: InvoiceLine[] = (invRow.invoice_lines || []).map((l: any) => {
+                    const desc = String(l.description || '');
+                    const qty = Number(l.quantity) || 0;
+                    let unit = Number(l.unit_price) || 0;
+                    const isHours = desc.toLowerCase().includes('uren');
+                    if (isHours) unit = round2(unit);
+                    const totals = Number(l.total) || (qty * unit);
+                    return {
+                        description: l.description,
+                        quantity: qty,
+                        unitPrice: unit,
+                        // Preserve 0% correctly; only default if value is null/undefined/non-numeric
+                        vatRate: Number.isFinite(Number(l.vat_rate)) ? Number(l.vat_rate) : 21,
+                        total: isHours ? round2(totals) : totals,
+                    } as InvoiceLine;
+                });
+
+                const dayIndex = (desc: string): number => {
+                    const s = (desc || '').toLowerCase();
+                    if (s.startsWith('maandag')) return 1;
+                    if (s.startsWith('dinsdag')) return 2;
+                    if (s.startsWith('woensdag')) return 3;
+                    if (s.startsWith('donderdag')) return 4;
+                    if (s.startsWith('vrijdag')) return 5;
+                    if (s.startsWith('zaterdag')) return 6;
+                    if (s.startsWith('zondag')) return 7;
+                    return 100; // non-day lines go last
+                };
+
+                const kindIndex = (desc: string): number => {
+                    const s = (desc || '').toLowerCase();
+                    if (s.includes('kilometer') || s.includes('kilometers') || s.includes(' km') || s.includes('km ') || s.includes('diesel') || s.includes('dot')) return 1; // kilometers/rates
+                    if (s.includes('uren')) return 2; // hours
+                    if (s.includes('tol')) return 3; // toll
+                    return 99;
+                };
+
+                const lines: InvoiceLine[] = rawLines
+                    .map((l, idx) => ({ l, idx }))
+                    .sort((a, b) => {
+                        const da = dayIndex(a.l.description);
+                        const db = dayIndex(b.l.description);
+                        if (da !== db) return da - db;
+                        const ka = kindIndex(a.l.description);
+                        const kb = kindIndex(b.l.description);
+                        if (ka !== kb) return ka - kb;
+                        return a.idx - b.idx; // stable
+                    })
+                    .map(x => x.l);
 
                 const inv: Invoice = {
                     id: invRow.id,
@@ -170,6 +216,7 @@ export default function EditInvoicePage() {
                 setInvoice(inv);
                 reset({
                     ...inv,
+                    customerId: (invRow as any).customer_id || '',
                     invoiceDate: parseISO(inv.invoiceDate),
                     dueDate: parseISO(inv.dueDate),
                 } as any);
@@ -228,14 +275,21 @@ export default function EditInvoicePage() {
 
     const tableBodyWithTotals = useMemo(() => {
         const body: (InvoiceLine & { id: string } | { type: 'day_total' | 'week_total', content: string, value?: number, key: string })[] = [];
+        // Non-toll day aggregation
         let currentDay = '';
         let daySubtotal = 0;
         let weekTotalHours = 0;
         let weekTotalKms = 0;
+        // Ensure unique React keys for day totals even if a day appears multiple times
+        let dayTotalSeq = 0;
+        // Collect toll lines separately to render as a section at the end
+        const tollLines: (InvoiceLine & { id: string })[] = [];
+        let tollTotal = 0;
 
         const processDaySubtotal = () => {
             if (watchedShowDailyTotals && currentDay && daySubtotal > 0) {
-                body.push({ type: 'day_total', content: `Totaal ${currentDay}`, value: daySubtotal, key: `daytotal-${currentDay}` });
+                body.push({ type: 'day_total', content: `Totaal ${currentDay}`, value: daySubtotal, key: `daytotal-${currentDay}-${dayTotalSeq}` });
+                dayTotalSeq += 1;
             }
             daySubtotal = 0;
         };
@@ -249,9 +303,10 @@ export default function EditInvoicePage() {
                 processDaySubtotal();
                 currentDay = dayName;
             }
-
-            const isMileageRate = ['kilometers', 'km', 'dot', 'diesel'].some(keyword => lineDescription.includes(keyword));
+            
+            const isMileageRate = ['kilometers', 'km', ' dot', 'diesel'].some(keyword => lineDescription.includes(keyword));
             const isHourRate = lineDescription.includes('uren');
+            const isTollLine = lineDescription.includes('tol');
             const quantity = Number(line.quantity) || 0;
             const unitPrice = Number(line.unitPrice) || 0;
             const vatRate = line.vatRate || 0;
@@ -262,14 +317,26 @@ export default function EditInvoicePage() {
             if (isHourRate) weekTotalHours += line.quantity || 0;
             if (isMileageRate) weekTotalKms += line.quantity || 0;
 
-            body.push(line);
-
-            if (isHourRate || isMileageRate) {
-                daySubtotal += lineTotal; // Day subtotal uses total including VAT
+            // Collect toll lines for a separate section at the bottom; other lines go directly in the body
+            if (isTollLine) {
+                tollLines.push(line as any);
+                tollTotal += lineTotal;
+            } else {
+                body.push(line);
+                if (isHourRate || isMileageRate) {
+                    daySubtotal += lineTotal; // Day subtotal uses total including VAT
+                }
             }
         });
 
         processDaySubtotal(); // Process the last day
+
+        // Append toll section at the bottom, ordered as the current fields order (already sorted earlier)
+        if (tollLines.length > 0) {
+            body.push({ type: 'week_total', content: 'Tol', key: 'toll-header' });
+            tollLines.forEach(l => body.push(l));
+            body.push({ type: 'day_total', content: 'Totaal tol', value: tollTotal, key: 'toll-total' });
+        }
 
         if (watchedShowWeeklyTotals) {
              body.push({ type: 'week_total', content: `Totaal uren: ${weekTotalHours.toFixed(2)} | Totaal kilometers: ${weekTotalKms.toFixed(2)}`, key: 'weektotal-summary'});
@@ -281,6 +348,24 @@ export default function EditInvoicePage() {
 
     const isReadOnly = invoice?.status === 'paid';
 
+    // Infer dates present in invoice for toll lookup
+    const invoiceDateRange = useMemo(() => {
+        const rx = /(\d{2})-(\d{2})-(\d{4})/;
+        let min: Date | null = null;
+        let max: Date | null = null;
+        (fields || []).forEach(line => {
+            const m = line.description?.match(rx);
+            if (m) {
+                const [_, dd, mm, yyyy] = m;
+                const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+                if (!min || d < min) min = d;
+                if (!max || d > max) max = d;
+            }
+        });
+        return { min, max };
+    }, [fields]);
+
+    // Opslaan: update factuur en vervang regels
     const handleUpdate = async (data: InvoiceFormData) => {
         setIsSubmitting(true);
         try {
@@ -308,12 +393,23 @@ export default function EditInvoicePage() {
                 quantity: l.quantity || 0,
                 description: l.description,
                 unit_price: Number(l.unitPrice) || 0,
-                vat_rate: l.vatRate || 21,
+                vat_rate: (Number.isFinite(Number(l.vatRate)) ? Number(l.vatRate) : 21),
                 total: (l.quantity || 0) * (Number(l.unitPrice) || 0),
             }));
             if (rows.length > 0) {
                 const { error: lineErr } = await supabase.from('invoice_lines').insert(rows);
                 if (lineErr) throw lineErr;
+            }
+
+            // If there are no toll lines anymore on this invoice, unapply any linked toll entries
+            const hasTollLines = (data.lines || []).some(l => (l.description || '').toLowerCase().includes('tol') && ((Number(l.unitPrice) || 0) > 0 || (Number(l.quantity) || 0) > 0));
+            if (!hasTollLines) {
+                try {
+                    await supabase
+                        .from('toll_entries')
+                        .update({ applied_invoice_id: null, applied_at: null })
+                        .eq('applied_invoice_id', invoiceId);
+                } catch (_) { /* ignore */ }
             }
 
             toast({ title: 'Factuur bijgewerkt' });
@@ -490,7 +586,7 @@ export default function EditInvoicePage() {
                 quantity: l.quantity || 0,
                 description: l.description,
                 unit_price: Number(l.unitPrice) || 0,
-                vat_rate: l.vatRate || 21,
+                vat_rate: (Number.isFinite(Number(l.vatRate)) ? Number(l.vatRate) : 21),
                 total: (l.quantity || 0) * (Number(l.unitPrice) || 0),
             }));
             if (lines.length > 0) await supabase.from('invoice_lines').insert(lines);
@@ -550,11 +646,13 @@ export default function EditInvoicePage() {
                     <CardHeader>
                         <div className="flex justify-end items-center gap-2">
                             {!isReadOnly && (
-                                <Button type="submit" disabled={isSubmitting || !isDirty}>
+                                <Button type="submit" disabled={isSubmitting}>
                                     {isSubmitting ? <Loader2 className="animate-spin mr-2"/> : <Save className="mr-2 h-4 w-4" />}
                                     Wijzigingen Opslaan
                                 </Button>
                             )}
+
+                            {/* Tol toevoegen via factuur is verwijderd; dit blok blijft leeg */}
 
                              <Button type="button" variant="secondary" onClick={handleDownloadPdf} disabled={isDownloading}>
                                 {isDownloading ? <Loader2 className="animate-spin mr-2"/> : <Download className="mr-2 h-4 w-4" />}
@@ -886,3 +984,6 @@ export default function EditInvoicePage() {
         </div>
     );
 }
+
+
+

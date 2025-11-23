@@ -15,6 +15,8 @@ export const supabase: SupabaseClient = createClient(url, anon, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
+    detectSessionInUrl: true,
+    // Help avoid rotating-refresh conflicts across tabs
+    multiTab: true,
   },
 });
-

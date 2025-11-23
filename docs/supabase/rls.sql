@@ -22,6 +22,7 @@ alter table documents enable row level security;
 alter table vehicle_statuses enable row level security;
 alter table company_profile enable row level security;
 alter table financial_settings enable row level security;
+alter table toll_entries enable row level security;
 
 -- Helpers: rol bepalen via profiel
 -- Note: SET search_path prevents SQL injection via schema manipulation
@@ -186,3 +187,8 @@ create policy "financial_settings admin all" on financial_settings
 drop policy if exists "financial_settings authenticated read" on financial_settings;
 create policy "financial_settings authenticated read" on financial_settings
   for select using (auth.role() = 'authenticated');
+
+-- Toll Entries (alleen admin voor nu)
+drop policy if exists "toll_entries admin all" on toll_entries;
+create policy "toll_entries admin all" on toll_entries
+  for all using (is_admin()) with check (is_admin());

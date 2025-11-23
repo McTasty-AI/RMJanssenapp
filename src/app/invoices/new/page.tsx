@@ -357,7 +357,7 @@ export default function NewInvoicePage() {
                 quantity: l.quantity || 0,
                 description: l.description,
                 unit_price: Number(l.unitPrice) || 0,
-                vat_rate: l.vatRate || 21,
+                vat_rate: (Number.isFinite(Number(l.vatRate)) ? Number(l.vatRate) : 21),
                 total: (l.quantity || 0) * (Number(l.unitPrice) || 0),
               }));
               const { error: linesErr } = await supabase.from('invoice_lines').insert(rows);
@@ -709,4 +709,3 @@ export default function NewInvoicePage() {
         </div>
     );
 }
-
