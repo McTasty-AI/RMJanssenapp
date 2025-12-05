@@ -17,6 +17,7 @@ import type { LeaveRequest, LeaveStatus, LeaveType } from '@/lib/types';
 import { leaveStatusTranslations, leaveTypeTranslations, leaveTypes } from '@/lib/types';
 import { holidays } from '@/lib/holidays';
 import { useUserCollection } from '@/hooks/use-user-collection';
+import { useIsMobile } from '@/hooks/use-is-mobile';
 
 
 import { Button } from '@/components/ui/button';
@@ -98,6 +99,8 @@ export default function LeavePage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { documents: leaveRequests, loading, refresh: refreshLeaveRequests } = useUserCollection<LeaveRequest>('leaveRequests');
+  const isMobile = useIsMobile();
+  const [showMobileCalendar, setShowMobileCalendar] = useState(false);
 
   const form = useForm<LeaveRequestFormData>({
     resolver: zodResolver(leaveRequestSchema),
@@ -107,6 +110,12 @@ export default function LeavePage() {
       reason: '',
     },
   });
+
+  useEffect(() => {
+    if (!isDialogOpen) {
+      setShowMobileCalendar(false);
+    }
+  }, [isDialogOpen]);
 
   const onSubmit = async (data: LeaveRequestFormData) => {
     if (!user || !data.dateRange.from || !data.dateRange.to) return;
@@ -307,19 +316,21 @@ export default function LeavePage() {
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
                       <FormLabel>Periode</FormLabel>
-                      <Popover>
-                        <PopoverTrigger asChild>
+                      {isMobile ? (
+                        <>
                           <Button
                             id="date"
+                            type="button"
                             variant={"outline"}
                             className={cn(
                               "w-full justify-start text-left font-normal",
-                              !field.value.from && "text-muted-foreground"
+                              !field.value?.from && "text-muted-foreground"
                             )}
+                            onClick={() => setShowMobileCalendar((prev) => !prev)}
                           >
                             <CalendarIcon className="mr-2 h-4 w-4" />
-                            {field.value.from ? (
-                              field.value.to ? (
+                            {field.value?.from ? (
+                              field.value?.to ? (
                                 <>
                                   {format(field.value.from, "LLL dd, y")} -{" "}
                                   {format(field.value.to, "LLL dd, y")}
@@ -331,19 +342,65 @@ export default function LeavePage() {
                               <span>Kies een periode</span>
                             )}
                           </Button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            initialFocus
-                            mode="range"
-                            defaultMonth={field.value.from}
-                            selected={field.value as any}
-                            onSelect={field.onChange}
-                            numberOfMonths={typeof window !== 'undefined' && window.innerWidth < 640 ? 1 : 2}
-                            locale={nl}
-                          />
-                        </PopoverContent>
-                      </Popover>
+                          {showMobileCalendar && (
+                            <div className="mt-2 rounded-md border">
+                              <Calendar
+                                initialFocus
+                                mode="range"
+                                defaultMonth={field.value?.from}
+                                selected={field.value as any}
+                                onSelect={(range) => {
+                                  field.onChange(range);
+                                  if (range?.from && range?.to) {
+                                    setShowMobileCalendar(false);
+                                  }
+                                }}
+                                numberOfMonths={1}
+                                locale={nl}
+                              />
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              id="date"
+                              type="button"
+                              variant={"outline"}
+                              className={cn(
+                                "w-full justify-start text-left font-normal",
+                                !field.value?.from && "text-muted-foreground"
+                              )}
+                            >
+                              <CalendarIcon className="mr-2 h-4 w-4" />
+                              {field.value?.from ? (
+                                field.value?.to ? (
+                                  <>
+                                    {format(field.value.from, "LLL dd, y")} -{" "}
+                                    {format(field.value.to, "LLL dd, y")}
+                                  </>
+                                ) : (
+                                  format(field.value.from, "LLL dd, y")
+                                )
+                              ) : (
+                                <span>Kies een periode</span>
+                              )}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar
+                              initialFocus
+                              mode="range"
+                              defaultMonth={field.value?.from}
+                              selected={field.value as any}
+                              onSelect={field.onChange}
+                              numberOfMonths={2}
+                              locale={nl}
+                            />
+                          </PopoverContent>
+                        </Popover>
+                      )}
                        <FormMessage />
                     </FormItem>
                   )}

@@ -1,4 +1,27 @@
-const formatCurrency = (value: number) => {
-    if (isNaN(value)) return '€ 0,00';
-    return `€ ${value.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
+﻿<TableBody>
+                    {loadingEntries ? (
+                      <TableRow><TableCell colSpan={7}>Ladenâ€¦</TableCell></TableRow>
+                    ) : weeklySummary.length === 0 ? (
+                      <TableRow><TableCell colSpan={7}>Geen resultaten</TableCell></TableRow>
+                    ) : (
+                      weeklySummary.map((g, idx) => (
+                        <TableRow key={`${g.weekId}-${g.day}-${g.licensePlate}-${g.country}-${g.vatRate}-${idx}`}>
+                          <TableCell>{g.weekId}</TableCell>
+                          <TableCell>{g.day}</TableCell>
+                          <TableCell>{g.licensePlate}</TableCell>
+                          <TableCell>
+                            {g.country}
+                            {(() => {
+                              const labels = (g as any).invoiceIds?.map((id: string) => invoiceMap[id]).filter(Boolean) as string[];
+                              if (!labels || labels.length === 0) return null;
+                              if (labels.length === 1) return <> Â· {labels[0]}</>;
+                              return <> Â· Meerdere ({labels.join(', ')})</>;
+                            })()}
+                          </TableCell>
+                          <TableCell>{g.vatRate}%</TableCell>
+                          <TableCell className="text-right">â‚¬ {g.total.toFixed(2)}</TableCell>
+                          <TableCell>{g.count}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
