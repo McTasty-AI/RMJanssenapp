@@ -33,6 +33,7 @@ const nextConfig: NextConfig = {
   },
   // Turbopack configuration for development builds
   turbopack: {
+    root: process.cwd(),
     resolveAlias: {
       fs: './noop.js',
     },
