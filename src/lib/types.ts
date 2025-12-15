@@ -98,6 +98,7 @@ export interface User {
     hasTravelAllowance?: boolean;
     travelDistance?: number; // one-way in km
     travelAllowanceRate?: number; // per km
+    overnightAllowanceRate?: number; // per overnight stay
 }
 
 export type DeclarationStatus = "pending" | "approved" | "rejected" | "paid";

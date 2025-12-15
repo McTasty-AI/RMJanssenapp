@@ -15,7 +15,7 @@ import { nl } from 'date-fns/locale';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ChevronLeft, ChevronRight, Download, User as UserIcon, Calendar as CalendarIcon, CheckCircle, Edit, Clock, X, Car } from 'lucide-react';
-import { getWeekIdsForMonth, getDateFromWeekId } from '@/lib/utils';
+import { getWeekIdsForMonth, getWeekIdsForYear, getDateFromWeekId } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { holidays } from '@/lib/holidays';
 import { calculateWorkHours } from '@/hooks/use-weekly-logs';
@@ -35,10 +35,13 @@ const months = Array.from({ length: 12 }, (_, i) => ({
   value: i,
   label: format(new Date(currentYear, i), 'LLLL', { locale: nl }),
 }));
+const weeksPerPage = 6;
 
 const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(amount);
 };
+
+const DEFAULT_OVERNIGHT_ALLOWANCE = 32;
 
 
 const StatusBadge = ({ status }: { status?: 'concept' | 'pending' | 'approved' | 'not_submitted' }) => {
@@ -126,7 +129,8 @@ const WeekDetailsTable = ({ weekId, users, logs, customers, driverFines }: { wee
             const travelDistance = user.hasTravelAllowance ? travelDays * (user.travelDistance ?? 0) * 2 : 0;
             const travelAllowance = user.hasTravelAllowance ? travelDistance * (user.travelAllowanceRate ?? 0) : 0;
 
-            const totalExpenseAllowance = expenseAllowance + (overnightStays * 32);
+            const overnightRate = user.overnightAllowanceRate ?? DEFAULT_OVERNIGHT_ALLOWANCE;
+            const totalExpenseAllowance = expenseAllowance + (overnightStays * overnightRate);
             
             // Calculate fines for this week
             const fineDate = getDateFromWeekId(weekId);
@@ -350,7 +354,8 @@ const MonthlyTotalTable = ({ users, logs, customers, weeks, leaveRequests, drive
                     const travelDays = workedDays - overnightStays;
                     const travelDistance = user.hasTravelAllowance ? travelDays * (user.travelDistance ?? 0) * 2 : 0;
                     const travelAllowance = user.hasTravelAllowance ? travelDistance * (user.travelAllowanceRate ?? 0) : 0;
-                    const totalExpenseAllowance = expenseAllowance + (overnightStays * 32);
+                    const overnightRate = user.overnightAllowanceRate ?? DEFAULT_OVERNIGHT_ALLOWANCE;
+                    const totalExpenseAllowance = expenseAllowance + (overnightStays * overnightRate);
 
                     report[user.uid!].travelAllowance += travelAllowance;
                     report[user.uid!].totalExpenseAllowance += totalExpenseAllowance;
@@ -458,6 +463,7 @@ export default function PayrollPage() {
     const [isExportDialogOpen, setIsExportDialogOpen] = useState(false);
     const [selectedWeeks, setSelectedWeeks] = useState<Set<string>>(new Set());
     const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+    const [exportWeekStart, setExportWeekStart] = useState(0);
     const { toast } = useToast();
 
     useEffect(() => {
@@ -508,10 +514,16 @@ export default function PayrollPage() {
 
     const selectedDate = new Date(selectedYear, selectedMonth);
     const weekIdsInMonth = getWeekIdsForMonth(selectedDate);
-    
+    const weekIdsInYear = useMemo(() => getWeekIdsForYear(new Date(selectedYear, 0, 1)), [selectedYear]);
+    const maxExportStart = Math.max(0, weekIdsInYear.length - weeksPerPage);
+    const visibleExportWeeks = useMemo(() => weekIdsInYear.slice(exportWeekStart, exportWeekStart + weeksPerPage), [weekIdsInYear, exportWeekStart]);
+
     const approvedLogsInMonth = useMemo(() => {
         return allLogs.filter(log => log.status === 'approved' && weekIdsInMonth.includes(log.weekId));
     }, [allLogs, weekIdsInMonth]);
+    const approvedLogsInYear = useMemo(() => {
+        return allLogs.filter(log => log.status === 'approved' && weekIdsInYear.includes(log.weekId));
+    }, [allLogs, weekIdsInYear]);
     
     const usersWithLogs = useMemo(() => {
         // Show all active users (not admin), not just those with approved logs
@@ -519,11 +531,30 @@ export default function PayrollPage() {
         return allUsers.filter(u => u.role !== 'admin' && u.status === 'active');
     }, [allUsers]);
 
+    useEffect(() => {
+        setExportWeekStart(prev => Math.min(prev, maxExportStart));
+    }, [maxExportStart]);
+
+    useEffect(() => {
+        setSelectedWeeks(new Set());
+        setSelectedUsers(new Set());
+        setExportWeekStart(0);
+    }, [selectedYear]);
+
     // Initialize selections when dialog opens
     const handleOpenExportDialog = () => {
         // Start with empty selections (all unchecked)
         setSelectedWeeks(new Set());
         setSelectedUsers(new Set());
+        const monthWeekIndex = weekIdsInYear.findIndex(weekId => {
+            const date = getDateFromWeekId(weekId);
+            return date && getMonth(date) === selectedMonth;
+        });
+        const halfWindow = Math.floor(weeksPerPage / 2);
+        const startIndex = monthWeekIndex === -1
+            ? Math.max(0, weekIdsInYear.length - weeksPerPage)
+            : Math.min(Math.max(monthWeekIndex - halfWindow, 0), maxExportStart);
+        setExportWeekStart(startIndex);
         setIsExportDialogOpen(true);
     };
 
@@ -537,13 +568,17 @@ export default function PayrollPage() {
             toast({ 
                 variant: "destructive",
                 title: "Selectie vereist", 
-                description: "Selecteer minimaal één week en één medewerker." 
+                description: "Selecteer minimaal een week en een medewerker." 
             });
             return;
         }
 
         const selectedUsersArray = usersWithLogs.filter(u => selectedUsers.has(u.uid!));
-        const selectedWeeksArray = Array.from(selectedWeeks).sort();
+        const selectedWeeksArray = Array.from(selectedWeeks).sort((a, b) => {
+            const aDate = getDateFromWeekId(a)?.getTime() ?? 0;
+            const bDate = getDateFromWeekId(b)?.getTime() ?? 0;
+            return aDate - bDate;
+        });
 
         const wb = XLSX.utils.book_new();
         
@@ -567,7 +602,7 @@ export default function PayrollPage() {
             };
             
             userWeeks.forEach(weekId => {
-                const log = approvedLogsInMonth.find(l => l.userId === user.uid && l.weekId === weekId);
+                const log = approvedLogsInYear.find(l => l.userId === user.uid && l.weekId === weekId);
                 const weekReport: Record<string, any> = { 
                     workedDays: 0, sickDays: 0, vacationDays: 0, atvDays: 0, 
                     hours100: 0, hours130: 0, hours150: 0, hours200: 0, 
@@ -578,12 +613,6 @@ export default function PayrollPage() {
                 // Calculate fines for this week
                 const fineDate = getDateFromWeekId(weekId);
                 if (fineDate) {
-                    const weekStart = startOfWeek(fineDate, { weekStartsOn: 1 });
-                    const weekEnd = addDays(weekStart, 6);
-                    // Use endOfDay to include the entire end day
-                    const weekEndEndOfDay = new Date(weekEnd);
-                    weekEndEndOfDay.setHours(23, 59, 59, 999);
-                    
                     const weekFines = driverFines.filter(f => {
                         if (!f.userId || f.userId !== user.uid) return false;
                         try {
@@ -660,7 +689,8 @@ export default function PayrollPage() {
                     const travelDays = workedDays - overnightStays;
                     const travelDistance = user.hasTravelAllowance ? travelDays * (user.travelDistance ?? 0) * 2 : 0;
                     weekReport.travelAllowance = user.hasTravelAllowance ? travelDistance * (user.travelAllowanceRate ?? 0) : 0;
-                    weekReport.totalExpenseAllowance = expenseAllowance + (overnightStays * 32);
+                    const overnightRate = user.overnightAllowanceRate ?? DEFAULT_OVERNIGHT_ALLOWANCE;
+                    weekReport.totalExpenseAllowance = expenseAllowance + (overnightStays * overnightRate);
                 }
                 
                 // Save the week report (with or without log data)
@@ -715,7 +745,7 @@ export default function PayrollPage() {
             XLSX.utils.book_append_sheet(wb, userWs, sheetName);
         });
 
-        const fileName = `Salaris_Export_${months[selectedMonth].label}_${selectedYear}.xlsx`;
+        const fileName = `Salaris_Export_${selectedYear}.xlsx`;
         XLSX.writeFile(wb, fileName);
         
         setIsExportDialogOpen(false);
@@ -810,6 +840,34 @@ export default function PayrollPage() {
                     </DialogHeader>
                     
                     <div className="space-y-4 py-4">
+                        <div className="flex items-center justify-between rounded-md border bg-muted/40 px-3 py-2">
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => setExportWeekStart(prev => Math.max(prev - weeksPerPage, 0))}
+                                    disabled={exportWeekStart === 0}
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                </Button>
+                                <span className="text-sm font-medium">
+                                    {weekIdsInYear.length > 0
+                                        ? `Week ${visibleExportWeeks[0]?.split('-')[1] ?? '?'} - ${visibleExportWeeks[visibleExportWeeks.length - 1]?.split('-')[1] ?? '?'} (${selectedYear})`
+                                        : `Geen weken voor ${selectedYear}`}
+                                </span>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => setExportWeekStart(prev => Math.min(prev + weeksPerPage, maxExportStart))}
+                                    disabled={exportWeekStart >= maxExportStart}
+                                >
+                                    <ChevronRight className="h-4 w-4" />
+                                </Button>
+                            </div>
+                            <span className="text-xs text-muted-foreground">Blader door alle weken van dit jaar</span>
+                        </div>
                         {/* Table layout: Medewerkers as rows, Weeks as columns */}
                         <div className="overflow-x-auto border rounded-md">
                             <Table>
@@ -823,26 +881,24 @@ export default function PayrollPage() {
                                                     size="sm"
                                                     className="h-6 px-2 text-xs"
                                                     onClick={() => {
-                                                        // Select all users that have at least one approved log
                                                         const usersWithAnyLogs = usersWithLogs.filter(u => 
-                                                            weekIdsInMonth.some(weekId =>
-                                                                approvedLogsInMonth.some(log => log.userId === u.uid && log.weekId === weekId)
+                                                            weekIdsInYear.some(weekId =>
+                                                                approvedLogsInYear.some(log => log.userId === u.uid && log.weekId === weekId)
                                                             )
                                                         );
                                                         if (usersWithAnyLogs.length === 0) {
                                                             toast({
                                                                 variant: "destructive",
                                                                 title: "Geen goedgekeurde weekstaten",
-                                                                description: "Geen medewerkers hebben goedgekeurde weekstaten voor deze maand."
+                                                                description: "Geen medewerkers hebben goedgekeurde weekstaten voor dit jaar."
                                                             });
                                                             return;
                                                         }
                                                         const allUsersIds = new Set(usersWithAnyLogs.map(u => u.uid!));
-                                                        // Also select all weeks that these users have logs for
                                                         const allWeeksSet = new Set<string>();
                                                         usersWithAnyLogs.forEach(u => {
-                                                            weekIdsInMonth.forEach(weekId => {
-                                                                if (approvedLogsInMonth.some(log => log.userId === u.uid && log.weekId === weekId)) {
+                                                            weekIdsInYear.forEach(weekId => {
+                                                                if (approvedLogsInYear.some(log => log.userId === u.uid && log.weekId === weekId)) {
                                                                     allWeeksSet.add(weekId);
                                                                 }
                                                             });
@@ -855,7 +911,7 @@ export default function PayrollPage() {
                                                 </Button>
                                             </div>
                                         </TableHead>
-                                        {weekIdsInMonth.map(weekId => {
+                                        {visibleExportWeeks.map(weekId => {
                                             const weekNumber = weekId.split('-')[1];
                                             return (
                                                 <TableHead key={weekId} className="text-center min-w-[100px]">
@@ -866,21 +922,19 @@ export default function PayrollPage() {
                                                             size="sm"
                                                             className="h-6 px-2 text-xs"
                                                             onClick={() => {
-                                                                // Find all users that have approved logs for this week
                                                                 const usersWithLogsForWeek = usersWithLogs.filter(u => 
-                                                                    approvedLogsInMonth.some(log => log.userId === u.uid && log.weekId === weekId)
+                                                                    approvedLogsInYear.some(log => log.userId === u.uid && log.weekId === weekId)
                                                                 );
                                                                 
                                                                 if (usersWithLogsForWeek.length === 0) {
                                                                     toast({
                                                                         variant: "destructive",
                                                                         title: "Geen goedgekeurde weekstaten",
-                                                                        description: `Geen medewerkers hebben goedgekeurde weekstaten voor Week ${weekNumber}.`
+                                                                        description: `Geen medewerkers hebben goedgekeurde weekstaten voor Week ${weekNumber} in ${selectedYear}.`
                                                                     });
                                                                     return;
                                                                 }
                                                                 
-                                                                // Check if this week is selected for ALL users with logs for this week
                                                                 const allUsersSelectedForWeek = usersWithLogsForWeek.every(u => 
                                                                     selectedUsers.has(u.uid!) && selectedWeeks.has(weekId)
                                                                 );
@@ -889,22 +943,19 @@ export default function PayrollPage() {
                                                                 const newUserSet = new Set(selectedUsers);
                                                                 
                                                                 if (allUsersSelectedForWeek) {
-                                                                    // Deselect: remove this week for all users with logs
                                                                     newWeekSet.delete(weekId);
-                                                                    // Remove users only if they have no other weeks selected
                                                                     usersWithLogsForWeek.forEach(u => {
-                                                                        const hasOtherWeeks = weekIdsInMonth.some(w => 
+                                                                        const hasOtherWeeks = weekIdsInYear.some(w => 
                                                                             w !== weekId && 
                                                                             newWeekSet.has(w) &&
                                                                             newUserSet.has(u.uid!) &&
-                                                                            approvedLogsInMonth.some(log => log.userId === u.uid && log.weekId === w)
+                                                                            approvedLogsInYear.some(log => log.userId === u.uid && log.weekId === w)
                                                                         );
                                                                         if (!hasOtherWeeks) {
                                                                             newUserSet.delete(u.uid!);
                                                                         }
                                                                     });
                                                                 } else {
-                                                                    // Select: add this week and all users with logs for this week
                                                                     newWeekSet.add(weekId);
                                                                     usersWithLogsForWeek.forEach(u => newUserSet.add(u.uid!));
                                                                 }
@@ -915,13 +966,13 @@ export default function PayrollPage() {
                                                         >
                                                             {(() => {
                                                                 const usersWithLogsForWeek = usersWithLogs.filter(u => 
-                                                                    approvedLogsInMonth.some(log => log.userId === u.uid && log.weekId === weekId)
+                                                                    approvedLogsInYear.some(log => log.userId === u.uid && log.weekId === weekId)
                                                                 );
-                                                                if (usersWithLogsForWeek.length === 0) return '☐';
+                                                                if (usersWithLogsForWeek.length === 0) return '-';
                                                                 const allSelected = usersWithLogsForWeek.every(u => 
                                                                     selectedUsers.has(u.uid!) && selectedWeeks.has(weekId)
                                                                 );
-                                                                return allSelected ? '✓' : '☐';
+                                                                return allSelected ? 'Aan' : 'Kies';
                                                             })()}
                                                         </Button>
                                                     </div>
@@ -932,11 +983,6 @@ export default function PayrollPage() {
                                 </TableHeader>
                                 <TableBody>
                                     {usersWithLogs.map(user => {
-                                        const userHasSelection = selectedUsers.has(user.uid!);
-                                        const userWeeks = weekIdsInMonth.filter(weekId => 
-                                            selectedWeeks.has(weekId) && selectedUsers.has(user.uid!)
-                                        );
-                                        
                                         return (
                                             <TableRow key={user.uid}>
                                                 <TableCell className="sticky left-0 bg-background z-10 font-medium">
@@ -947,21 +993,19 @@ export default function PayrollPage() {
                                                             size="sm"
                                                             className="h-6 px-2 text-xs"
                                                             onClick={() => {
-                                                                // Get all weeks that this user has approved logs for
-                                                                const userApprovedWeeks = weekIdsInMonth.filter(weekId =>
-                                                                    approvedLogsInMonth.some(log => log.userId === user.uid && log.weekId === weekId)
+                                                                const userApprovedWeeks = weekIdsInYear.filter(weekId =>
+                                                                    approvedLogsInYear.some(log => log.userId === user.uid && log.weekId === weekId)
                                                                 );
                                                                 
                                                                 if (userApprovedWeeks.length === 0) {
                                                                     toast({
                                                                         variant: "destructive",
                                                                         title: "Geen goedgekeurde weekstaten",
-                                                                        description: `${user.firstName} ${user.lastName} heeft geen goedgekeurde weekstaten voor deze maand.`
+                                                                        description: `${user.firstName} ${user.lastName} heeft geen goedgekeurde weekstaten voor dit jaar.`
                                                                     });
                                                                     return;
                                                                 }
                                                                 
-                                                                // Check if ALL weeks for this user are selected
                                                                 const allWeeksSelected = userApprovedWeeks.every(weekId => 
                                                                     selectedWeeks.has(weekId) && selectedUsers.has(user.uid!)
                                                                 );
@@ -970,20 +1014,18 @@ export default function PayrollPage() {
                                                                 const newUserSet = new Set(selectedUsers);
                                                                 
                                                                 if (allWeeksSelected) {
-                                                                    // Deselect: remove all weeks for this user
                                                                     userApprovedWeeks.forEach(weekId => {
-                                                                        newWeekSet.delete(weekId);
-                                                                        // Check if other users still have this week selected
                                                                         const otherUsersForWeek = usersWithLogs.filter(u => 
                                                                             u.uid !== user.uid && 
                                                                             selectedUsers.has(u.uid!) &&
-                                                                            approvedLogsInMonth.some(log => log.userId === u.uid && log.weekId === weekId)
+                                                                            approvedLogsInYear.some(log => log.userId === u.uid && log.weekId === weekId)
                                                                         );
-                                                                        // Week is already removed from newWeekSet, so no need to check further
+                                                                        if (otherUsersForWeek.length === 0) {
+                                                                            newWeekSet.delete(weekId);
+                                                                        }
                                                                     });
                                                                     newUserSet.delete(user.uid!);
                                                                 } else {
-                                                                    // Select: add all weeks for this user
                                                                     newUserSet.add(user.uid!);
                                                                     userApprovedWeeks.forEach(weekId => newWeekSet.add(weekId));
                                                                 }
@@ -993,20 +1035,20 @@ export default function PayrollPage() {
                                                             }}
                                                         >
                                                             {(() => {
-                                                                const userApprovedWeeks = weekIdsInMonth.filter(weekId =>
-                                                                    approvedLogsInMonth.some(log => log.userId === user.uid && log.weekId === weekId)
+                                                                const userApprovedWeeks = weekIdsInYear.filter(weekId =>
+                                                                    approvedLogsInYear.some(log => log.userId === user.uid && log.weekId === weekId)
                                                                 );
-                                                                if (userApprovedWeeks.length === 0) return '☐';
+                                                                if (userApprovedWeeks.length === 0) return '-';
                                                                 const allSelected = userApprovedWeeks.every(weekId => 
                                                                     selectedWeeks.has(weekId) && selectedUsers.has(user.uid!)
                                                                 );
-                                                                return allSelected ? '✓' : '☐';
+                                                                return allSelected ? 'Aan' : 'Kies';
                                                             })()}
                                                         </Button>
                                                     </div>
                                                 </TableCell>
-                                                {weekIdsInMonth.map(weekId => {
-                                                    const hasApprovedLog = approvedLogsInMonth.some(log => 
+                                                {visibleExportWeeks.map(weekId => {
+                                                    const hasApprovedLog = approvedLogsInYear.some(log => 
                                                         log.userId === user.uid && log.weekId === weekId
                                                     );
                                                     const isSelected = selectedWeeks.has(weekId) && selectedUsers.has(user.uid!);
@@ -1033,25 +1075,23 @@ export default function PayrollPage() {
                                                                         newWeekSet.add(weekId);
                                                                         newUserSet.add(user.uid!);
                                                                     } else {
-                                                                        // Check if we should remove the week or user from selections
                                                                         const otherUsersForWeek = usersWithLogs.filter(u => 
                                                                             u.uid !== user.uid && 
                                                                             selectedUsers.has(u.uid!) &&
-                                                                            approvedLogsInMonth.some(log => log.userId === u.uid && log.weekId === weekId)
+                                                                            approvedLogsInYear.some(log => log.userId === u.uid && log.weekId === weekId)
                                                                         );
                                                                         if (otherUsersForWeek.length === 0) {
                                                                             newWeekSet.delete(weekId);
                                                                         }
                                                                         
-                                                                        const userOtherWeeks = weekIdsInMonth.filter(w => 
+                                                                        const userOtherWeeks = weekIdsInYear.filter(w => 
                                                                             w !== weekId && 
                                                                             selectedWeeks.has(w) &&
-                                                                            approvedLogsInMonth.some(log => log.userId === user.uid && log.weekId === w)
+                                                                            approvedLogsInYear.some(log => log.userId === user.uid && log.weekId === w)
                                                                         );
                                                                         if (userOtherWeeks.length === 0) {
                                                                             newUserSet.delete(user.uid!);
                                                                         } else {
-                                                                            // Keep user selected if they have other weeks selected
                                                                             newUserSet.add(user.uid!);
                                                                         }
                                                                     }
@@ -1067,11 +1107,12 @@ export default function PayrollPage() {
                                         );
                                     })}
                                 </TableBody>
+
                             </Table>
                         </div>
                         
                         <div className="text-sm text-muted-foreground pt-2 border-t">
-                            <p>💡 Tip: Gebruik de knoppen boven elke kolom om een week voor alle medewerkers te selecteren, of links van elke medewerker om alle weken voor die medewerker te selecteren.</p>
+                            <p>Tip: Gebruik de kolomknoppen om een week voor alle medewerkers te selecteren, of links van elke medewerker om alle weken voor die medewerker te selecteren. Gebruik de pijlen bovenaan om door de weken van het jaar te bladeren.</p>
                         </div>
                     </div>
 

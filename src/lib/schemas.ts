@@ -29,6 +29,7 @@ const baseUserSchema = z.object({
   hasTravelAllowance: z.boolean().optional(),
   travelDistance: z.coerce.number().optional(),
   travelAllowanceRate: z.coerce.number().optional(),
+  overnightAllowanceRate: z.coerce.number().optional(),
 });
 
 export const signUpSchema = baseUserSchema.extend({
@@ -72,6 +73,9 @@ export const updateUserSchema = baseUserSchema.extend({
       if (!data.station) ctx.addIssue({ code: 'custom', message: 'Standplaats is verplicht.', path: ['station']});
       if ((data.travelDistance ?? 0) <= 0) ctx.addIssue({ code: 'custom', message: 'Afstand moet groter dan 0 zijn.', path: ['travelDistance']});
       if ((data.travelAllowanceRate ?? 0) <= 0) ctx.addIssue({ code: 'custom', message: 'Tarief moet groter dan 0 zijn.', path: ['travelAllowanceRate']});
+    }
+    if (data.overnightAllowanceRate !== undefined && data.overnightAllowanceRate < 0) {
+        ctx.addIssue({ code: 'custom', message: 'Overnachtingsvergoeding kan niet negatief zijn.', path: ['overnightAllowanceRate']});
     }
 });
 

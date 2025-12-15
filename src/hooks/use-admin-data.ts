@@ -42,7 +42,7 @@ export const useAdminData = () => {
         // Fetch users - only select needed fields for better performance
         supabase
             .from('profiles')
-            .select('id, first_name, last_name, email, role, status, assigned_license_plates, salary_scale_group, salary_scale_step, employment_type, contract_hours, work_days, home_street, home_house_number, home_postal_code, home_city, station, has_travel_allowance, travel_distance, travel_allowance_rate')
+            .select('id, first_name, last_name, email, role, status, assigned_license_plates, salary_scale_group, salary_scale_step, employment_type, contract_hours, work_days, home_street, home_house_number, home_postal_code, home_city, station, has_travel_allowance, travel_distance, travel_allowance_rate, overnight_allowance_rate')
             .order('first_name')
             .then(({ data, error }) => {
                 if (error) {

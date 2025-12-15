@@ -91,6 +91,7 @@ create table if not exists profiles (
   has_travel_allowance boolean default false,
   travel_distance numeric,
   travel_allowance_rate numeric,
+  overnight_allowance_rate numeric default 32,
 
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
