@@ -1,6 +1,6 @@
 
 
-export type DayStatus = "gewerkt" | "ziek" | "vrij" | "ouderschapsverlof" | "weekend" | "feestdag" | "atv" | "persoonlijk" | "onbetaald";
+export type DayStatus = "gewerkt" | "ziek" | "vrij" | "ouderschapsverlof" | "weekend" | "feestdag" | "atv" | "persoonlijk" | "onbetaald" | "cursus";
 
 export const statusTranslations: Record<DayStatus, string> = {
   gewerkt: "Gewerkt",
@@ -12,6 +12,7 @@ export const statusTranslations: Record<DayStatus, string> = {
   atv: "ATV",
   persoonlijk: "Persoonlijk Verlof",
   onbetaald: "Onbetaald Verlof",
+  cursus: "Cursus",
 };
 
 export const tollOptions = ["Geen", "BE", "DE", "FR", "CH", "AT", "BE/DE"] as const;

@@ -296,9 +296,9 @@ export const useWeeklyLogs = (currentDate?: Date) => {
             
             // Validate and correct status based on date and leave requests
             let correctStatus = dl.status;
-            if (isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof') {
+            if (isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof' && dl.status !== 'cursus') {
               correctStatus = 'feestdag';
-            } else if (isWeekend && !isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof') {
+            } else if (isWeekend && !isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof' && dl.status !== 'cursus') {
               correctStatus = 'weekend';
             } else if (leaveRequest && !isWeekend && !isHoliday) {
               // If there's an approved leave request for this day, use the leave type
@@ -559,10 +559,10 @@ export const useWeeklyLogs = (currentDate?: Date) => {
         
         // Validate and correct status based on date
         let correctStatus = day.status;
-        if (isHoliday && day.status !== 'gewerkt' && day.status !== 'ziek' && day.status !== 'vrij' && day.status !== 'ouderschapsverlof') {
+        if (isHoliday && day.status !== 'gewerkt' && day.status !== 'ziek' && day.status !== 'vrij' && day.status !== 'ouderschapsverlof' && day.status !== 'cursus') {
             // If it's a holiday and status is not one that can override holiday, set to feestdag
             correctStatus = 'feestdag';
-        } else if (isWeekend && !isHoliday && day.status !== 'gewerkt' && day.status !== 'ziek' && day.status !== 'vrij' && day.status !== 'ouderschapsverlof') {
+        } else if (isWeekend && !isHoliday && day.status !== 'gewerkt' && day.status !== 'ziek' && day.status !== 'vrij' && day.status !== 'ouderschapsverlof' && day.status !== 'cursus') {
             // If it's a weekend (not a holiday) and status is not one that can override weekend, set to weekend
             correctStatus = 'weekend';
         } else if (!isHoliday && !isWeekend && day.status === 'feestdag') {
@@ -714,4 +714,3 @@ export const useWeeklyLogs = (currentDate?: Date) => {
 
   return { isLoaded, weekData, saveLog, unlockLog, approveLog, updateUserPlates };
 };
-

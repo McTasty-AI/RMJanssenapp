@@ -27,7 +27,7 @@ export const useMonthlyReport = (monthDate: Date) => {
         hours150: 0,
         hours200: 0,
         surchargeHours19: 0,
-        statusCounts: { gewerkt: 0, ziek: 0, vrij: 0, atv: 0, ouderschapsverlof: 0, feestdag: 0, weekend: 0, persoonlijk: 0, onbetaald: 0 },
+        statusCounts: { gewerkt: 0, ziek: 0, vrij: 0, atv: 0, ouderschapsverlof: 0, feestdag: 0, weekend: 0, persoonlijk: 0, onbetaald: 0, cursus: 0 },
         overnightStays: 0
     });
 
@@ -35,7 +35,7 @@ export const useMonthlyReport = (monthDate: Date) => {
         const defaultTotals = {
             totalHours: 0, hours100: 0, hours130: 0, hours150: 0, hours200: 0,
             surchargeHours19: 0,
-            statusCounts: { gewerkt: 0, ziek: 0, vrij: 0, atv: 0, ouderschapsverlof: 0, feestdag: 0, weekend: 0, persoonlijk: 0, onbetaald: 0 },
+            statusCounts: { gewerkt: 0, ziek: 0, vrij: 0, atv: 0, ouderschapsverlof: 0, feestdag: 0, weekend: 0, persoonlijk: 0, onbetaald: 0, cursus: 0 },
             overnightStays: 0
         };
 
@@ -100,9 +100,9 @@ export const useMonthlyReport = (monthDate: Date) => {
                         
                         // Validate and correct status based on date
                         let correctStatus = dl.status;
-                        if (isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof') {
+                        if (isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof' && dl.status !== 'cursus') {
                             correctStatus = 'feestdag';
-                        } else if (isWeekend && !isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof') {
+                        } else if (isWeekend && !isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof' && dl.status !== 'cursus') {
                             correctStatus = 'weekend';
                         } else if (!isHoliday && !isWeekend && dl.status === 'feestdag') {
                             // If it's not a holiday but status is feestdag, reset to gewerkt
@@ -294,7 +294,7 @@ export const useMonthlyReport = (monthDate: Date) => {
                 else if (dayOfWeek === 6) week.saturdayHours += workHours;
                 else week.weekdayHours += workHours;
             } else if (day.status !== 'weekend' && day.status !== 'feestdag') {
-                if (['ziek', 'vrij', 'atv', 'ouderschapsverlof'].includes(day.status)){
+                if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus'].includes(day.status)){
                     if (dayOfWeek !== 0 && dayOfWeek !== 6 && !isHoliday) {
                        week.weekdayHours += 8;
                    }

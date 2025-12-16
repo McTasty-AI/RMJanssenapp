@@ -90,9 +90,9 @@ export const useAdminData = () => {
                                     
                                     // Validate and correct status based on date
                                     let correctStatus = dl.status;
-                                    if (isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof') {
+                                    if (isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof' && dl.status !== 'cursus') {
                                         correctStatus = 'feestdag';
-                                    } else if (isWeekend && !isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof') {
+                                    } else if (isWeekend && !isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof' && dl.status !== 'cursus') {
                                         correctStatus = 'weekend';
                                     } else if (!isHoliday && !isWeekend && dl.status === 'feestdag') {
                                         // If it's not a holiday but status is feestdag, reset to gewerkt

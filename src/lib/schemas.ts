@@ -93,7 +93,7 @@ const breakTimeSchema = z.object({
 export const dailyLogSchema = z.object({
   date: z.string(),
   day: z.string(),
-  status: z.enum(["gewerkt", "ziek", "vrij", "ouderschapsverlof", "weekend", "feestdag", "atv", "persoonlijk", "onbetaald"]),
+  status: z.enum(["gewerkt", "ziek", "vrij", "ouderschapsverlof", "weekend", "feestdag", "atv", "persoonlijk", "onbetaald", "cursus"]),
   startTime: timeSchema,
   endTime: timeSchema,
   breakTime: breakTimeSchema,

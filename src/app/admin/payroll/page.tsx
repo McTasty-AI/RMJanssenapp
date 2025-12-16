@@ -105,7 +105,7 @@ const WeekDetailsTable = ({ weekId, users, logs, customers, driverFines }: { wee
                             const surchargeMinutes = getOverlapMinutes(startTimeInMinutes, endTimeInMinutes, 0, 5 * 60) + getOverlapMinutes(startTimeInMinutes, endTimeInMinutes, 21 * 60, 24 * 60);
                             surchargeHours += surchargeMinutes / 60;
                         }
-                    } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof'].includes(day.status) && !isHoliday && dayOfWeek !== 0 && dayOfWeek !== 6) {
+                    } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus'].includes(day.status) && !isHoliday && dayOfWeek !== 0 && dayOfWeek !== 6) {
                         workHours = 8;
                     }
                     daysData[dayName] = workHours;
@@ -327,7 +327,7 @@ const MonthlyTotalTable = ({ users, logs, customers, weeks, leaveRequests, drive
                                 surchargeHours += surchargeMinutes / 60;
                              }
 
-                        } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof'].includes(day.status) && !isHoliday && dayOfWeek !== 0 && dayOfWeek !== 6) {
+                        } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus'].includes(day.status) && !isHoliday && dayOfWeek !== 0 && dayOfWeek !== 6) {
                             workHours = 8;
                         }
                         
@@ -666,7 +666,7 @@ export default function PayrollPage() {
                             if (day.status === 'ziek') weekReport.sickDays++;
                             else if (day.status === 'vrij') weekReport.vacationDays++;
                             else if (day.status === 'atv') weekReport.atvDays++;
-                            if (['ziek', 'vrij', 'atv', 'ouderschapsverlof'].includes(day.status) && !isHoliday && dayOfWeek !== 0 && dayOfWeek !== 6) workHours = 8;
+                            if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus'].includes(day.status) && !isHoliday && dayOfWeek !== 0 && dayOfWeek !== 6) workHours = 8;
                         }
                         
                         if (isHoliday || dayOfWeek === 0) sundayHolidayHours += workHours;
