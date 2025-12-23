@@ -1,8 +1,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import { analyzePurchaseInvoice } from '@/ai/flows/analyze-purchase-invoice-flow';
 import { getAdminClient } from '@/lib/supabase/server';
 import { mapAppToSupabase } from '@/lib/utils';
+// Note: OCR extraction is client-side only, so we skip it in the email ingress route
 
 // IMPORTANT: This key must be kept secret and match the key in your email provider's webhook settings.
 const INGRESS_API_KEY = process.env.EMAIL_INGRESS_API_KEY;
@@ -35,17 +35,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'No processable attachment (PDF/Image) found.' });
     }
 
-    // 4. Convert attachment to data URI for the AI
+    // 4. Extract invoice data using OCR (skip on server, will be done client-side)
+    // Note: OCR extraction requires client-side execution due to PDF.js worker limitations
+    // The extraction will happen when the user views/edits the invoice
+    let result = null;
+
+    // 5. Upload attachment to Supabase storage
+    const timestamp = Date.now();
+    const storagePath = `${timestamp}-${validAttachment.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     const fileContent = await validAttachment.arrayBuffer();
-    const dataUri = `data:${validAttachment.type};base64,${Buffer.from(fileContent).toString('base64')}`;
+    
+    const { error: uploadError } = await supabase.storage
+      .from('purchase_invoices')
+      .upload(storagePath, new Blob([fileContent], { type: validAttachment.type }), {
+        contentType: validAttachment.type,
+        upsert: false,
+      });
 
-
-    // 5. Analyze the invoice using the existing Genkit flow
-    const result = await analyzePurchaseInvoice({ invoiceDataUri: dataUri });
+    if (uploadError) {
+      console.error('Error uploading file:', uploadError);
+      throw uploadError;
+    }
 
     // 6. Find or create supplier
     let supplierId: string | null = null;
-    if (result.supplierName) {
+    if (result?.supplierName) {
       const supplierName = result.supplierName.trim();
       const { data: existingSupplier } = await supabase
         .from('suppliers')
@@ -56,19 +70,30 @@ export async function POST(req: NextRequest) {
       if (existingSupplier?.id) {
         supplierId = existingSupplier.id as string;
       } else {
-        const insertPayload = mapAppToSupabase({ companyName: supplierName, createdAt: new Date().toISOString() });
+        // Auto-create supplier from OCR data
+        const insertPayload = mapAppToSupabase({ 
+          companyName: supplierName,
+          kvkNumber: result.kvkNumber,
+          vatNumber: result.vatNumber,
+          iban: result.iban,
+          createdAt: new Date().toISOString() 
+        });
         const { data: created, error: supErr } = await supabase
           .from('suppliers')
           .insert(insertPayload)
           .select('id')
           .single();
-        if (supErr) throw supErr;
-        supplierId = created.id as string;
+        if (supErr) {
+          console.error('Error creating supplier:', supErr);
+          // Continue without supplier - user can add manually
+        } else if (created?.id) {
+          supplierId = created.id as string;
+        }
       }
     }
 
     // 7. Check for duplicates before saving (by supplier+invoice_number+total)
-    if (supplierId && result.invoiceNumber && result.grandTotal) {
+    if (supplierId && result?.invoiceNumber && result?.grandTotal) {
       const { data: dup, error: dupErr } = await supabase
         .from('purchase_invoices')
         .select('id')
@@ -83,16 +108,36 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 8. Save the new invoice in Supabase
+    // 8. Extract license plate from OCR result
+    let invoiceLicensePlate: string | null = result?.licensePlate || null;
+
+    // 9. Save the new invoice in Supabase with OCR extracted data
+    const ocrData = result ? {
+      supplierName: result.supplierName || undefined,
+      invoiceNumber: result.invoiceNumber || undefined,
+      invoiceDate: result.invoiceDate || undefined,
+      dueDate: result.dueDate || undefined,
+      subTotal: result.subTotal || undefined,
+      vatTotal: result.vatTotal || undefined,
+      grandTotal: result.grandTotal || undefined,
+      description: result.description || undefined,
+      licensePlate: result.licensePlate || undefined,
+      kvkNumber: result.kvkNumber,
+      vatNumber: result.vatNumber,
+      iban: result.iban,
+    } : null;
+
     const invoicePayload = mapAppToSupabase({
       supplierId: supplierId,
-      invoiceNumber: result.invoiceNumber || null,
-      invoiceDate: result.invoiceDate || new Date().toISOString(),
-      dueDate: result.dueDate || null,
+      invoiceNumber: result?.invoiceNumber || null,
+      invoiceDate: result?.invoiceDate || new Date().toISOString().split('T')[0],
+      dueDate: result?.dueDate || null,
       status: 'Nieuw',
-      total: result.grandTotal,
-      vatTotal: result.vatTotal ?? null,
-      licensePlate: null,
+      total: result?.grandTotal || 0,
+      vatTotal: result?.vatTotal ?? null,
+      licensePlate: invoiceLicensePlate,
+      pdfPath: storagePath,
+      ocrData: ocrData,
       createdAt: new Date().toISOString(),
     });
 
@@ -103,27 +148,8 @@ export async function POST(req: NextRequest) {
       .single();
     if (insErr) throw insErr;
 
-    // 9. Insert lines if present
-    if (result.lines && result.lines.length > 0) {
-      const lineRows = result.lines.map(l => ({
-        purchase_invoice_id: inserted.id,
-        description: l.description,
-        quantity: l.quantity ?? 1,
-        unit_price: l.unitPrice ?? 0,
-        vat_rate: l.vatRate ?? 21,
-        total: l.total ?? (l.quantity ?? 1) * (l.unitPrice ?? 0),
-        category: null,
-      }));
-      const { error: linesErr } = await supabase
-        .from('purchase_invoice_lines')
-        .insert(lineRows);
-      if (linesErr) throw linesErr;
-    }
-
-    // Note: attachment storage into Supabase bucket can be added later if needed.
-
-    console.log(`Successfully processed and saved invoice from ${from}`);
-    return NextResponse.json({ message: 'Invoice processed successfully' });
+    console.log(`Successfully processed and saved invoice from ${from}${result ? ' (with OCR extraction)' : ' (manual entry required)'}`);
+    return NextResponse.json({ message: result ? 'Invoice processed and extracted successfully' : 'Invoice file uploaded. Manual entry required.' });
 
   } catch (error: any) {
     console.error('Error processing inbound email:', error);

@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format, isPast } from 'date-fns';
-import { PlusCircle, Trash2, Loader2, CheckCircle, Clock, AlertCircle, Circle } from 'lucide-react';
+import { PlusCircle, Trash2, Loader2, CheckCircle, Clock, AlertCircle, Circle, Send, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +27,8 @@ import { cn, mapSupabaseToApp } from '@/lib/utils';
 import { supabase } from '@/lib/supabase/client';
 import { Checkbox } from '@/components/ui/checkbox';
 
+
+type TollStatus = 'added' | 'pending' | 'none';
 
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(value);
@@ -49,6 +51,53 @@ const StatusBadge = ({ status }: { status: InvoiceStatusExtended }) => {
         </Badge>
     );
 };
+
+const tollStatusInfo: Record<TollStatus, { variant: "secondary" | "success" | "destructive"; label: string }> = {
+    added: { variant: "success", label: "Tol toegevoegd" },
+    pending: { variant: "destructive", label: "Tol toevoegen" },
+    none: { variant: "secondary", label: "Geen tol" },
+};
+
+const TollStatusBadge = ({ status }: { status: TollStatus }) => {
+    const info = tollStatusInfo[status];
+    return (
+        <Badge variant={info.variant} className="flex items-center gap-1.5">
+            {info.label}
+        </Badge>
+    );
+};
+
+const extractInvoiceContext = (reference?: string | null) => {
+    if (!reference) return {};
+    const weekMatch = reference.match(/week\s+(\d{1,2})\s*[-/]\s*(\d{4})/i);
+    const plateMatch = reference.match(/\(([A-Z0-9-]{5,})\)/i);
+    if (!weekMatch || !plateMatch) return {};
+    const week = weekMatch[1].padStart(2, '0');
+    const year = weekMatch[2];
+    const weekId = `${year}-${week}`;
+    const licensePlate = plateMatch[1].toUpperCase();
+    return { weekId, licensePlate, key: `${weekId}|${licensePlate}` };
+};
+
+const formatInvoiceReference = (reference?: string | null): string => {
+    if (!reference) return '-';
+    // Extract week, year, and license plate from reference
+    // Format: "Week xx - yyyy (kenteken)" -> "Week xx - yyyy - kenteken"
+    const weekMatch = reference.match(/week\s+(\d{1,2})\s*[-/]\s*(\d{4})/i);
+    const plateMatch = reference.match(/\(([A-Z0-9-]{5,})\)/i);
+    
+    if (weekMatch && plateMatch) {
+        const week = weekMatch[1].padStart(2, '0');
+        const year = weekMatch[2];
+        const plate = plateMatch[1].toUpperCase();
+        return `Week ${week} - ${year} - ${plate}`;
+    }
+    
+    // Fallback: return original reference if format doesn't match
+    return reference;
+};
+
+type InvoiceWithTollStatus = Invoice & { tollStatus: TollStatus };
 
 const FinancialSummaryBar = ({ summary, counts }: { summary: Record<string, number>, counts: Record<string, number>}) => {
     const total = Object.values(summary).reduce((a, b) => a + b, 0);
@@ -93,8 +142,11 @@ const FinancialSummaryBar = ({ summary, counts }: { summary: Record<string, numb
 };
 
 
+type SortColumn = 'kenmerk' | 'klant' | 'factuurdatum' | 'vervaldatum' | 'bedrag' | null;
+type SortDirection = 'asc' | 'desc';
+
 export default function InvoicesPage() {
-    const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
+    const [allInvoices, setAllInvoices] = useState<InvoiceWithTollStatus[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeFilter, setActiveFilter] = useState<InvoiceStatusExtended>('all');
     const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
@@ -103,6 +155,138 @@ export default function InvoicesPage() {
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
     const { toast } = useToast();
     const router = useRouter();
+    type ContextInfo = { weekId?: string; licensePlate?: string; key?: string };
+    const [showBulkSendDialog, setShowBulkSendDialog] = useState(false);
+    const [bulkSendTargets, setBulkSendTargets] = useState<InvoiceWithTollStatus[]>([]);
+    const [bulkNeedsTolWarning, setBulkNeedsTolWarning] = useState<InvoiceWithTollStatus[]>([]);
+    const [isBulkSending, setIsBulkSending] = useState(false);
+    const [sortColumn, setSortColumn] = useState<SortColumn>(null);
+    const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+    const enrichWithTollStatus = useCallback(async (invoices: Invoice[]): Promise<InvoiceWithTollStatus[]> => {
+        if (invoices.length === 0) return [];
+        const contexts: ContextInfo[] = invoices.map(inv => extractInvoiceContext(inv.reference));
+        const invoiceIds = invoices.map(inv => inv.id).filter(Boolean);
+        const contextsWithKey = contexts.filter((ctx): ctx is { weekId: string; licensePlate: string; key: string } =>
+            Boolean(ctx.weekId && ctx.licensePlate && ctx.key)
+        );
+        const contextPlateMap = new Map<string, Set<string>>();
+        contextsWithKey.forEach(ctx => {
+            const week = ctx.weekId;
+            const plate = ctx.licensePlate.toUpperCase();
+            if (!contextPlateMap.has(week)) contextPlateMap.set(week, new Set());
+            contextPlateMap.get(week)!.add(plate);
+        });
+        const weekIds = Array.from(contextPlateMap.keys());
+        const plates = Array.from(new Set(contextsWithKey.map(ctx => ctx.licensePlate.toUpperCase())));
+        try {
+            const appliedPromise = invoiceIds.length > 0
+                ? supabase
+                    .from('toll_entries')
+                    .select('id, applied_invoice_id')
+                    .in('applied_invoice_id', invoiceIds)
+                : Promise.resolve<{ data: any[]; error: null }>({ data: [], error: null });
+            const groupedPromise = weekIds.length > 0 && plates.length > 0
+                ? supabase
+                    .from('toll_entries')
+                    .select('id, week_id, license_plate, applied_invoice_id')
+                    .in('week_id', weekIds)
+                    .in('license_plate', plates)
+                : Promise.resolve<{ data: any[]; error: null }>({ data: [], error: null });
+
+            const [{ data: appliedRows, error: appliedError }, { data: groupedRows, error: groupedError }] = await Promise.all([appliedPromise, groupedPromise]);
+            if (appliedError || groupedError) {
+                console.error('Fout bij ophalen tolstatus', appliedError || groupedError);
+                return invoices.map(inv => ({ ...inv, tollStatus: 'none' }));
+            }
+
+            const appliedCountByInvoice: Record<string, number> = {};
+            (appliedRows || []).forEach((row: any) => {
+                const id = row.applied_invoice_id;
+                if (!id) return;
+                appliedCountByInvoice[id] = (appliedCountByInvoice[id] || 0) + 1;
+            });
+
+            const pendingByGroup: Record<string, { pending: number; total: number }> = {};
+            (groupedRows || []).forEach((row: any) => {
+                const weekId = row.week_id;
+                const plate = (row.license_plate || '').toUpperCase();
+                if (!weekId || !plate) return;
+                const key = `${weekId}|${plate}`;
+                if (!pendingByGroup[key]) pendingByGroup[key] = { pending: 0, total: 0 };
+                pendingByGroup[key].total += 1;
+                if (!row.applied_invoice_id) {
+                    pendingByGroup[key].pending += 1;
+                }
+            });
+
+            let weeklyLogRows: any[] = [];
+            if (weekIds.length > 0) {
+                const { data: weeklyData, error: weeklyErr } = await supabase
+                    .from('weekly_logs')
+                    .select('id, week_id')
+                    .in('week_id', weekIds);
+                if (weeklyErr) {
+                    console.error('Tolstatus: ophalen weekstaten mislukt', weeklyErr);
+                } else {
+                    weeklyLogRows = weeklyData || [];
+                }
+            }
+            const logIdToWeek: Record<string, string> = {};
+            const weeklyLogIds: string[] = [];
+            weeklyLogRows.forEach((row: any) => {
+                if (row?.id && row?.week_id) {
+                    logIdToWeek[row.id] = row.week_id;
+                    weeklyLogIds.push(row.id);
+                }
+            });
+            let dailyRows: any[] = [];
+            if (weeklyLogIds.length > 0) {
+                const { data: dailyData, error: dailyErr } = await supabase
+                    .from('daily_logs')
+                    .select('weekly_log_id, toll, license_plate')
+                    .in('weekly_log_id', weeklyLogIds);
+                if (dailyErr) {
+                    console.error('Tolstatus: ophalen dagstaten mislukt', dailyErr);
+                } else {
+                    dailyRows = dailyData || [];
+                }
+            }
+            const shouldHaveMap: Record<string, boolean> = {};
+            dailyRows.forEach((row: any) => {
+                const weekId = logIdToWeek[row.weekly_log_id];
+                if (!weekId) return;
+                const plateRaw = row.license_plate ? String(row.license_plate).toUpperCase() : '';
+                if (!plateRaw) return;
+                const allowedPlates = contextPlateMap.get(weekId);
+                if (!allowedPlates || !allowedPlates.has(plateRaw)) return;
+                const tollValue = String(row.toll || '').toLowerCase();
+                if (!tollValue || tollValue === 'geen') return;
+                const key = `${weekId}|${plateRaw}`;
+                shouldHaveMap[key] = true;
+            });
+
+            return invoices.map((inv, idx) => {
+                const context = contexts[idx];
+                const key = context?.key;
+                let tollStatus: TollStatus = 'none';
+                if (appliedCountByInvoice[inv.id]) {
+                    tollStatus = 'added';
+                } else if (key) {
+                    const group = pendingByGroup[key];
+                    if (group && group.pending > 0) {
+                        tollStatus = 'pending';
+                    } else if (shouldHaveMap[key]) {
+                        tollStatus = 'pending';
+                    }
+                }
+                return { ...inv, tollStatus: inv.status === 'concept' ? tollStatus : 'none' };
+            });
+        } catch (error) {
+            console.error('Tolstatus ophalen mislukt', error);
+            return invoices.map(inv => ({ ...inv, tollStatus: 'none' }));
+        }
+    }, []);
 
     useEffect(() => {
         let isMounted = true;
@@ -142,7 +326,8 @@ export default function InvoicesPage() {
                 ...inv,
                 customer: customersMap.get(inv.customerId) || inv.customer || { companyName: '-', street: '', houseNumber: '', postalCode: '', city: '' },
             }));
-            setAllInvoices(fullInvoices);
+            const invoicesWithTollStatus = await enrichWithTollStatus(fullInvoices);
+            setAllInvoices(invoicesWithTollStatus);
             setLoading(false);
         };
 
@@ -156,8 +341,13 @@ export default function InvoicesPage() {
             .subscribe();
 
         return () => { isMounted = false; channel.unsubscribe(); };
-    }, [toast]);
+    }, [toast, enrichWithTollStatus]);
     
+    const selectedInvoiceObjects = useMemo(
+        () => allInvoices.filter(inv => selectedInvoices.includes(inv.id)),
+        [allInvoices, selectedInvoices]
+    );
+    const hasConceptSelection = selectedInvoiceObjects.some(inv => inv.status === 'concept');
     const { filteredInvoices, financialSummary, financialCounts } = useMemo(() => {
         const summary: Record<string, number> = { 'concept': 0, 'open': 0, 'paid': 0, 'overdue': 0 };
         const counts: Record<string, number> = { 'concept': 0, 'open': 0, 'paid': 0, 'overdue': 0 };
@@ -182,8 +372,45 @@ export default function InvoicesPage() {
             filtered = allInvoices.filter(invoice => invoice.status === activeFilter);
         }
 
+        // Sort invoices
+        if (sortColumn) {
+            filtered = [...filtered].sort((a, b) => {
+                let aValue: any;
+                let bValue: any;
+                
+                switch (sortColumn) {
+                    case 'kenmerk':
+                        aValue = formatInvoiceReference(a.reference).toLowerCase();
+                        bValue = formatInvoiceReference(b.reference).toLowerCase();
+                        break;
+                    case 'klant':
+                        aValue = a.customer.companyName.toLowerCase();
+                        bValue = b.customer.companyName.toLowerCase();
+                        break;
+                    case 'factuurdatum':
+                        aValue = new Date(a.invoiceDate).getTime();
+                        bValue = new Date(b.invoiceDate).getTime();
+                        break;
+                    case 'vervaldatum':
+                        aValue = new Date(a.dueDate).getTime();
+                        bValue = new Date(b.dueDate).getTime();
+                        break;
+                    case 'bedrag':
+                        aValue = a.grandTotal;
+                        bValue = b.grandTotal;
+                        break;
+                    default:
+                        return 0;
+                }
+                
+                if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+                if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
         return { filteredInvoices: filtered, financialSummary: summary, financialCounts: counts };
-    }, [allInvoices, activeFilter]);
+    }, [allInvoices, activeFilter, sortColumn, sortDirection]);
 
 
     const handleSelectAll = (checked: boolean | 'indeterminate') => {
@@ -199,6 +426,17 @@ export default function InvoicesPage() {
             setSelectedInvoices(prev => [...prev, invoiceId]);
         } else {
             setSelectedInvoices(prev => prev.filter(id => id !== invoiceId));
+        }
+    };
+
+    const handleSort = (column: SortColumn) => {
+        if (sortColumn === column) {
+            // Toggle direction if clicking the same column
+            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            // Set new column and default to descending
+            setSortColumn(column);
+            setSortDirection('desc');
         }
     };
     
@@ -256,6 +494,80 @@ export default function InvoicesPage() {
             setInvoicesToDelete(null);
             setSelectedInvoices([]);
         }
+    };
+
+    const handlePrepareBulkSend = () => {
+        if (selectedInvoices.length === 0) {
+            toast({ variant: 'destructive', title: 'Geen facturen geselecteerd' });
+            return;
+        }
+        const concepts = selectedInvoiceObjects.filter(inv => inv.status === 'concept');
+        if (concepts.length === 0) {
+            toast({ variant: 'destructive', title: 'Selecteer minstens één conceptfactuur om te verzenden.' });
+            return;
+        }
+        setBulkSendTargets(concepts);
+        setBulkNeedsTolWarning(concepts.filter(inv => inv.tollStatus === 'pending'));
+        setShowBulkSendDialog(true);
+    };
+
+    const handleBulkSendConfirmed = async () => {
+        if (bulkSendTargets.length === 0) {
+            setShowBulkSendDialog(false);
+            return;
+        }
+        setIsBulkSending(true);
+        try {
+            const updated: Record<string, string> = {};
+            const failures: string[] = [];
+            for (const invoice of bulkSendTargets) {
+                try {
+                    const { data: nextNr, error: nrErr } = await supabase.rpc('next_invoice_number');
+                    if (nrErr || !nextNr) throw nrErr || new Error('Geen factuurnummer beschikbaar');
+                    const payload = { status: 'open', invoice_number: String(nextNr) };
+                    const { error: updateErr } = await supabase.from('invoices').update(payload).eq('id', invoice.id);
+                    if (updateErr) throw updateErr;
+                    updated[invoice.id] = String(nextNr);
+                } catch (error) {
+                    console.error('Bulk verzenden fout', error);
+                    failures.push(invoice.invoiceNumber || invoice.reference || invoice.id);
+                }
+            }
+            const successIds = Object.keys(updated);
+            if (successIds.length > 0) {
+                setAllInvoices(prev =>
+                    prev.map(inv => {
+                        const nr = updated[inv.id];
+                        if (!nr) return inv;
+                        return { ...inv, status: 'open', invoiceNumber: nr, tollStatus: 'none' };
+                    })
+                );
+                setSelectedInvoices(prev => prev.filter(id => !updated[id]));
+                toast({
+                    title: 'Facturen verzonden',
+                    description: `${successIds.length} factuur/facturen verzonden.`,
+                });
+            }
+            if (failures.length > 0) {
+                toast({
+                    variant: 'destructive',
+                    title: 'Niet alle facturen verzonden',
+                    description: `Controleer: ${failures.join(', ')}`,
+                });
+            }
+        } finally {
+            setIsBulkSending(false);
+            setShowBulkSendDialog(false);
+            setBulkSendTargets([]);
+            setBulkNeedsTolWarning([]);
+        }
+    };
+
+    const closeBulkSendDialog = () => {
+        if (isBulkSending) return;
+        setShowBulkSendDialog(false);
+        setBulkSendTargets([]);
+        setBulkNeedsTolWarning([]);
     };
 
     const isAnyToDeleteSent = useMemo(() => {
@@ -328,12 +640,72 @@ export default function InvoicesPage() {
                                         aria-label="Selecteer alle"
                                      />
                                 </TableHead>
-                                <TableHead className="w-[180px]">Factuurnummer</TableHead>
-                                <TableHead>Klant</TableHead>
-                                <TableHead className="w-[140px]">Factuurdatum</TableHead>
-                                <TableHead className="w-[140px]">Vervaldatum</TableHead>
-                                <TableHead className="w-[150px] text-right">Bedrag</TableHead>
-                                <TableHead className="w-[200px]">Status</TableHead>
+                                <TableHead 
+                                    className="w-[280px] cursor-pointer hover:bg-muted/50 select-none"
+                                    onClick={() => handleSort('kenmerk')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Kenmerk
+                                        {sortColumn === 'kenmerk' ? (
+                                            sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                                        ) : (
+                                            <ArrowUpDown className="h-4 w-4 opacity-50" />
+                                        )}
+                                    </div>
+                                </TableHead>
+                                <TableHead 
+                                    className="cursor-pointer hover:bg-muted/50 select-none"
+                                    onClick={() => handleSort('klant')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Klant
+                                        {sortColumn === 'klant' ? (
+                                            sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                                        ) : (
+                                            <ArrowUpDown className="h-4 w-4 opacity-50" />
+                                        )}
+                                    </div>
+                                </TableHead>
+                                <TableHead 
+                                    className="w-[140px] cursor-pointer hover:bg-muted/50 select-none"
+                                    onClick={() => handleSort('factuurdatum')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Factuurdatum
+                                        {sortColumn === 'factuurdatum' ? (
+                                            sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                                        ) : (
+                                            <ArrowUpDown className="h-4 w-4 opacity-50" />
+                                        )}
+                                    </div>
+                                </TableHead>
+                                <TableHead 
+                                    className="w-[140px] cursor-pointer hover:bg-muted/50 select-none"
+                                    onClick={() => handleSort('vervaldatum')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Vervaldatum
+                                        {sortColumn === 'vervaldatum' ? (
+                                            sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                                        ) : (
+                                            <ArrowUpDown className="h-4 w-4 opacity-50" />
+                                        )}
+                                    </div>
+                                </TableHead>
+                                <TableHead 
+                                    className="w-[150px] text-right cursor-pointer hover:bg-muted/50 select-none"
+                                    onClick={() => handleSort('bedrag')}
+                                >
+                                    <div className="flex items-center justify-end gap-2">
+                                        Bedrag
+                                        {sortColumn === 'bedrag' ? (
+                                            sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                                        ) : (
+                                            <ArrowUpDown className="h-4 w-4 opacity-50" />
+                                        )}
+                                    </div>
+                                </TableHead>
+                                <TableHead className="w-[240px]">Statussen</TableHead>
                                 <TableHead className="w-[100px] text-right">Acties</TableHead>
                             </TableRow>
                         </TableHeader>
@@ -365,15 +737,16 @@ export default function InvoicesPage() {
                                                 />
                                             </TableCell>
                                             <TableCell className="font-medium py-1">
-                                                {invoice.invoiceNumber || `Concept: ${invoice.reference || `#${invoice.id.substring(0, 5)}`}`}
+                                                {formatInvoiceReference(invoice.reference)}
                                             </TableCell>
                                             <TableCell className="py-1">{invoice.customer.companyName}</TableCell>
                                             <TableCell className="py-1">{format(new Date(invoice.invoiceDate), 'dd-MM-yyyy')}</TableCell>
                                             <TableCell className="py-1">{format(new Date(invoice.dueDate), 'dd-MM-yyyy')}</TableCell>
                                             <TableCell className={cn("text-right py-1", isCredit && "text-destructive")}>{formatCurrency(invoice.grandTotal)}</TableCell>
                                             <TableCell className="py-1">
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex flex-wrap items-center gap-2">
                                                     <StatusBadge status={isOverdue ? 'overdue' : invoice.status} />
+                                                    {invoice.status === 'concept' && <TollStatusBadge status={invoice.tollStatus} />}
                                                     {isCredit && <Badge variant="secondary">Credit</Badge>}
                                                 </div>
                                             </TableCell>
@@ -405,7 +778,11 @@ export default function InvoicesPage() {
                  {selectedInvoices.length > 0 && (
                     <CardFooter className="p-4 border-t justify-between">
                        <span className="text-sm text-muted-foreground">{selectedInvoices.length} item(s) geselecteerd</span>
-                       <div className="flex gap-2">
+                       <div className="flex gap-2 flex-wrap">
+                           <Button variant="default" onClick={handlePrepareBulkSend} disabled={!hasConceptSelection || isBulkSending}>
+                                {isBulkSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                                Verzend selectie
+                           </Button>
                            <Button variant="outline" onClick={handleMarkAsPaid} disabled={isUpdatingStatus}>
                                 {isUpdatingStatus ? <Loader2 className="mr-2 h-4 w-4 animate-spin"/> : <CheckCircle className="mr-2 h-4 w-4" />}
                                 Markeer als betaald
@@ -432,8 +809,37 @@ export default function InvoicesPage() {
                             {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Verwijderen'}
                         </AlertDialogAction>
                     </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-        </div>
+            </AlertDialogContent>
+        </AlertDialog>
+        <AlertDialog open={showBulkSendDialog} onOpenChange={(open) => open ? setShowBulkSendDialog(true) : closeBulkSendDialog()}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>{bulkNeedsTolWarning.length > 0 ? 'Tol nog niet toegevoegd' : 'Facturen verzenden'}</AlertDialogTitle>
+                    <AlertDialogDescription className="space-y-2">
+                        {bulkNeedsTolWarning.length > 0 ? (
+                            <>
+                                <p>Het systeem verwacht tol op de volgende facturen:</p>
+                                <ul className="list-disc pl-5">
+                                    {bulkNeedsTolWarning.map(inv => (
+                                        <li key={inv.id}>{formatInvoiceReference(inv.reference)}</li>
+                                    ))}
+                                </ul>
+                                <p>Weet je zeker dat je deze facturen zonder tol wilt versturen?</p>
+                            </>
+                        ) : (
+                            <p>Je staat op het punt {bulkSendTargets.length} conceptfactuur/facturen te versturen.</p>
+                        )}
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel onClick={closeBulkSendDialog} disabled={isBulkSending}>Annuleren</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleBulkSendConfirmed} disabled={isBulkSending}>
+                        {isBulkSending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                        Verzenden
+                    </AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    </div>
     );
 }

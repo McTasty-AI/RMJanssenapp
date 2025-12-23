@@ -413,7 +413,10 @@ export function WeeklyLogForm({
   const { control, getValues, watch, trigger, setValue, reset, formState: { isDirty, isSubmitting } } = form;
   const isMobile = useIsMobile();
   const { toast } = useToast();
-  const assignedPlates = currentUser?.assignedLicensePlates || [];
+  const assignedPlates = useMemo(
+    () => currentUser?.assignedLicensePlates || [],
+    [currentUser]
+  );
   
   const watchedValues = watch();
   
@@ -432,7 +435,7 @@ export function WeeklyLogForm({
   }, [weekData]);
   
   const formIsEditable = !weekIsLockedByStatus;
-  const canSubmit = useMemo(() => assignedPlates.length > 0, [assignedPlates]);
+  const canSubmit = assignedPlates.length > 0;
 
   const handleAutoSave = useCallback(async () => {
       // Prevent multiple simultaneous saves
@@ -598,6 +601,7 @@ export function WeeklyLogForm({
             case 'vrij':
             case 'atv':
             case 'ouderschapsverlof':
+            case 'cursus':
                 dailyHours = 8;
                 break;
         }

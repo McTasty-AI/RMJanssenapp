@@ -213,7 +213,8 @@ export default function NewInvoicePage() {
               .from('weekly_logs')
               .select('*, daily_logs(*)')
               .eq('status', 'approved')
-              .order('week_id', { ascending: false });
+              .order('week_id', { ascending: false })
+              .limit(100); // Limit to most recent 100 approved weeks for performance
             if (!mounted) return;
             if (error) {
                 console.error('Error loading weekstates:', error);

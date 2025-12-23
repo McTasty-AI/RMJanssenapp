@@ -63,6 +63,7 @@ export default function PdfPreview({ file }: PdfPreviewProps) {
   const [pageNumber, setPageNumber] = useState(1);
   const [containerWidth, setContainerWidth] = useState(0);
   const [isPdfLoaded, setIsPdfLoaded] = useState(false);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   
@@ -154,20 +155,12 @@ export default function PdfPreview({ file }: PdfPreviewProps) {
   const goToPrevPage = () => setPageNumber(prev => Math.max(prev - 1, 1));
   const goToNextPage = () => setPageNumber(prev => Math.min(prev + 1, numPages!));
   
-  if (!file) {
-    return <Skeleton className="h-64 w-full" />;
-  }
-
-  // Log file info for debugging and create object URL if needed
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
-  
   useEffect(() => {
     if (!file) {
       setFileUrl(null);
-      return;
+      return undefined;
     }
     
-    // Log file info
     console.log('PDF Preview - File info:', {
       name: file.name,
       type: file.type,
@@ -177,21 +170,19 @@ export default function PdfPreview({ file }: PdfPreviewProps) {
       isBlob: file instanceof Blob
     });
     
-    // Create object URL from File/Blob for react-pdf
-    // react-pdf works better with object URLs than File objects directly
     if (file instanceof File || file instanceof Blob) {
       const url = URL.createObjectURL(file);
       setFileUrl(url);
       console.log('Created object URL for PDF:', url);
       
-      // Cleanup URL when file changes or component unmounts
       return () => {
         URL.revokeObjectURL(url);
       };
-    } else {
-      console.error('Invalid file object:', file);
-      setFileUrl(null);
     }
+    
+    console.error('Invalid file object:', file);
+    setFileUrl(null);
+    return undefined;
   }, [file]);
   
   // Memoize options to prevent unnecessary reloads

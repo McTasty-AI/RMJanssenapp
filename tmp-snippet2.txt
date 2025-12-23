@@ -1,0 +1,16 @@
+﻿<TableRow><TableCell colSpan={9}>Geen resultaten</TableCell></TableRow>
+                    ) : (
+                      weeklySummary.map((g) => {
+                        const key = `${g.weekId}|${g.day}|${g.licensePlate}|${g.country}|${g.vatRate}`;
+                        const isOpen = expanded.has(key);
+                        const labels = (g as any).invoiceIds?.map((id: string) => invoiceMap[id]).filter(Boolean) as string[];
+                        const invoiceLabel = !labels || labels.length === 0 ? '-' : (labels.length === 1 ? labels[0] : `Meerdere (${labels.join(', ')})`);
+                        const items = itemsByGroup.get(key) || [];
+                        return (
+                          <>
+                            <TableRow key={`${key}-row`} className="cursor-pointer" onClick={() => toggleGroup(key)}>
+                              <TableCell className="w-6">{isOpen ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}</TableCell>
+                              <TableCell>{g.weekId}</TableCell>
+                              <TableCell>{g.day}</TableCell>
+                              <TableCell>{g.licensePlate}</TableCell>
+              

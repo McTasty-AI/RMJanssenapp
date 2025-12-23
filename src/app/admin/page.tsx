@@ -126,7 +126,7 @@ export default function AdminPage() {
   return (
     <div className="space-y-8">
         <div className="space-y-2">
-            <h1 className="text-3xl font-bold">Admin Commandocentrum</h1>
+            <h1 className="text-3xl font-bold">Adminpanel</h1>
             <p className="text-muted-foreground">
                 Welkom, {user?.firstName}. Hier is een overzicht van de bedrijfsactiviteiten.
             </p>
@@ -157,6 +157,7 @@ export default function AdminPage() {
                     icon={ArrowDown}
                     title="Inkoopfacturen"
                     description="Beheer hier uw inkoopfacturen."
+                    disabled={true}
                 />
                 <AdminCard 
                     href="/admin/rates"

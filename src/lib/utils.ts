@@ -42,7 +42,7 @@ export function getWeekIdsForYear(date: Date): string[] {
         const thursdayOfWeek = addDays(weekStartDate, 3);
         if (getYear(thursdayOfWeek) === year) {
              const weekNumber = getISOWeek(weekStartDate);
-             return `${year}-${String(weekNumber).padStart(2, '0')}`;
+             return `${year}-${weekNumber}`;
         }
         return null;
     }).filter((id): id is string => id !== null);

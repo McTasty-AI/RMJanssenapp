@@ -301,6 +301,7 @@ export interface TollEntry {
     country: string;       // Land-code of naam
     licensePlate: string;  // Kenteken
     usageDate: string;     // ISO datum (YYYY-MM-DD)
+    usageTime?: string;    // Optioneel tijdstip (HH:mm) voor betere uniekheid
     amount: number;        // Exclusief BTW
     vatRate: number;       // Percentage, bijv. 21
     weekId?: string;       // Afgeleide week-id 'YYYY-WW'
@@ -388,6 +389,8 @@ export interface CostCalculationData {
     rent?: number;
     numVehicles?: number;
     generalInsurance?: number;
+    manualKmRate?: number;
+    manualHourRate?: number;
 }
 
 

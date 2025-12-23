@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useForm, useFieldArray, useWatch, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -15,9 +15,9 @@ import { useToast } from '@/hooks/use-toast';
 import { Loader2, PlusCircle, Trash2, Save, Send, CheckCircle, FileText, ArrowUp, ArrowDown, Download, ChevronDown, FileMinus } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
 import { mapSupabaseToApp } from '@/lib/utils';
-import type { Invoice, InvoiceStatus, CompanyProfile, InvoiceLine } from '@/lib/types';
+import type { Invoice, InvoiceStatus, CompanyProfile, InvoiceLine, Customer } from '@/lib/types';
 import { invoiceFormSchema, type InvoiceFormData } from '@/lib/schemas';
-import { format, parseISO, addDays } from 'date-fns';
+import { format, parseISO, addDays, getISOWeek, getISOYear } from 'date-fns';
 import { Separator } from '@/components/ui/separator';
 import Image from 'next/image';
 import { useRouter, useParams } from 'next/navigation';
@@ -46,6 +46,38 @@ const StatusBadge = ({ status, isCredit }: { status: InvoiceStatus, isCredit: bo
     return <Badge variant={variant[status]} className="capitalize text-lg px-4 py-2">{text}</Badge>;
 };
 
+const mileageDescriptionKeywords = ['kilometer', 'kilometers', ' km', 'km ', 'diesel', ' dot'];
+
+const isMileageDescription = (description?: string | null) => {
+    if (!description) return false;
+    const normalized = description.toLowerCase();
+    return mileageDescriptionKeywords.some(keyword => normalized.includes(keyword));
+};
+
+const extractWeekIdFromReference = (reference?: string | null): string | null => {
+    if (!reference) return null;
+    const match = reference.match(/week\s*(\d{1,2})\s*[-/]\s*(\d{4})/i);
+    if (!match) return null;
+    const week = match[1].padStart(2, '0');
+    const year = match[2];
+    return `${year}-${week}`;
+};
+
+const deriveWeekId = (reference?: string | null, invoiceDate?: string | null): string | null => {
+    const fromReference = extractWeekIdFromReference(reference);
+    if (fromReference) return fromReference;
+    if (!invoiceDate) return null;
+    try {
+        const parsed = parseISO(invoiceDate);
+        if (Number.isNaN(parsed.getTime())) return null;
+        const week = String(getISOWeek(parsed)).padStart(2, '0');
+        const year = String(getISOYear(parsed));
+        return `${year}-${week}`;
+    } catch {
+        return null;
+    }
+};
+
 
 export default function EditInvoicePage() {
     const params = useParams();
@@ -60,6 +92,10 @@ export default function EditInvoicePage() {
     const [isCreatingCredit, setIsCreatingCredit] = useState(false);
     const [nextInvoiceNumber, setNextInvoiceNumber] = useState('');
     const [showSentWarning, setShowSentWarning] = useState(false);
+    const [customerDetails, setCustomerDetails] = useState<Customer | null>(null);
+    const [invoiceWeekId, setInvoiceWeekId] = useState<string | null>(null);
+    const [weeklyMileageRate, setWeeklyMileageRate] = useState<number | null>(null);
+    const appliedMileageRateRef = useRef(false);
     // Tolregels toevoegen gebeurt voortaan alleen via Toloverzichten
 
     const form = useForm<InvoiceFormData>({
@@ -71,7 +107,7 @@ export default function EditInvoicePage() {
         },
     });
 
-    const { control, reset, getValues, formState: { isDirty }, watch: watchForm } = form;
+    const { control, reset, getValues, setValue, formState: { isDirty }, watch: watchForm } = form;
 
     const { fields, append, remove, swap } = useFieldArray({
         control,
@@ -128,19 +164,44 @@ export default function EditInvoicePage() {
                     .single();
                 if (error || !invRow) throw error;
 
-                // Build customer snapshot
-                let customer = invRow.customer_snapshot ? mapSupabaseToApp(invRow.customer_snapshot) : null;
-                if (!customer && invRow.customer_id) {
+                // Build customer snapshot (with financial details for rate lookup)
+                let customerSnapshot = invRow.customer_snapshot ? mapSupabaseToApp(invRow.customer_snapshot) as any : null;
+                let resolvedCustomerId = invRow.customer_id || customerSnapshot?.id || null;
+                if (!customerSnapshot && invRow.customer_id) {
                     const { data: cust } = await supabase
                         .from('customers')
                         .select('*')
                         .eq('id', invRow.customer_id)
                         .maybeSingle();
-                    if (cust) customer = { ...(mapSupabaseToApp(cust) as any), id: cust.id } as any;
+                    if (cust) {
+                        customerSnapshot = mapSupabaseToApp(cust) as any;
+                        resolvedCustomerId = cust.id;
+                    }
                 }
-                if (!customer) {
-                    customer = { companyName: '-', street: '', houseNumber: '', postalCode: '', city: '' } as any;
+                if (customerSnapshot) {
+                    customerSnapshot = { ...customerSnapshot, id: resolvedCustomerId || customerSnapshot.id || 'unknown' };
+                } else {
+                    customerSnapshot = {
+                        id: resolvedCustomerId || 'unknown',
+                        companyName: '-',
+                        street: '',
+                        houseNumber: '',
+                        postalCode: '',
+                        city: '',
+                        kvkNumber: '',
+                        contactName: '',
+                    } as any;
                 }
+                setCustomerDetails(customerSnapshot as Customer);
+                const invoiceCustomer = {
+                    companyName: customerSnapshot.companyName || '-',
+                    kvkNumber: customerSnapshot.kvkNumber || '',
+                    street: customerSnapshot.street || '',
+                    houseNumber: customerSnapshot.houseNumber || '',
+                    postalCode: customerSnapshot.postalCode || '',
+                    city: customerSnapshot.city || '',
+                    contactName: customerSnapshot.contactName || '',
+                };
 
                 // Map raw rows and then sort by Day (Ma..Zo) and within day by kind: kilometers -> uren -> tol
                 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -198,7 +259,7 @@ export default function EditInvoicePage() {
                     id: invRow.id,
                     invoiceNumber: invRow.invoice_number || '',
                     status: invRow.status,
-                    customer: customer as any,
+                    customer: invoiceCustomer as any,
                     invoiceDate: invRow.invoice_date,
                     dueDate: invRow.due_date,
                     reference: invRow.reference || '',
@@ -213,6 +274,7 @@ export default function EditInvoicePage() {
                     showWorkTimes: invRow.show_work_times || false,
                 };
 
+                setInvoiceWeekId(deriveWeekId(inv.reference, invRow.invoice_date));
                 setInvoice(inv);
                 reset({
                     ...inv,
@@ -232,6 +294,68 @@ export default function EditInvoicePage() {
         fetchInvoice();
     }, [invoiceId, reset, router]);
 
+    useEffect(() => {
+        appliedMileageRateRef.current = false;
+        setWeeklyMileageRate(prev => (prev !== null ? null : prev));
+    }, [invoiceId, invoiceWeekId, customerDetails?.id]);
+
+    useEffect(() => {
+        if (!invoiceWeekId || !customerDetails?.id) {
+            setWeeklyMileageRate(null);
+            return;
+        }
+        if (customerDetails.mileageRateType !== 'dot' && customerDetails.mileageRateType !== 'variable') {
+            setWeeklyMileageRate(null);
+            return;
+        }
+        let isActive = true;
+        const fetchWeeklyRate = async () => {
+            const { data, error } = await supabase
+                .from('weekly_rates')
+                .select('rate')
+                .eq('week_id', invoiceWeekId)
+                .eq('customer_id', customerDetails.id)
+                .maybeSingle();
+            if (!isActive) return;
+            if (error || !data || typeof data.rate !== 'number') {
+                setWeeklyMileageRate(null);
+                return;
+            }
+            const rawRate = Number(data.rate);
+            if (Number.isNaN(rawRate)) {
+                setWeeklyMileageRate(null);
+                return;
+            }
+            if (customerDetails.mileageRateType === 'dot') {
+                const base = customerDetails.mileageRate ?? 0.56;
+                setWeeklyMileageRate(base * (1 + rawRate / 100));
+            } else {
+                setWeeklyMileageRate(rawRate);
+            }
+        };
+        fetchWeeklyRate();
+        return () => { isActive = false; };
+    }, [invoiceWeekId, customerDetails]);
+
+    useEffect(() => {
+        if (weeklyMileageRate === null || weeklyMileageRate === undefined) return;
+        if (appliedMileageRateRef.current) return;
+        const currentLines = getValues('lines');
+        if (!currentLines || currentLines.length === 0) return;
+        let touchedMileageLine = false;
+        currentLines.forEach((line, index) => {
+            if (isMileageDescription(line?.description)) {
+                touchedMileageLine = true;
+                const currentValue = Number(line?.unitPrice) || 0;
+                if (Math.abs(currentValue - weeklyMileageRate) > 0.0001) {
+                    setValue(`lines.${index}.unitPrice`, weeklyMileageRate, { shouldDirty: true });
+                }
+            }
+        });
+        if (touchedMileageLine) {
+            appliedMileageRateRef.current = true;
+        }
+    }, [weeklyMileageRate, getValues, setValue, fields]);
 
     const watchedLines = useWatch({ control, name: 'lines' });
     const { subTotal, vatTotal, grandTotal, hasEmptyToll, vatBreakdown } = useMemo(() => {
@@ -984,6 +1108,3 @@ export default function EditInvoicePage() {
         </div>
     );
 }
-
-
-

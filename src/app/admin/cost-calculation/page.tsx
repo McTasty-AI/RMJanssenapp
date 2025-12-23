@@ -20,7 +20,7 @@ import { generateCostCalculationPdfAction } from '@/app/actions/generateCostCalc
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Download, Save, Plus, Minus, Truck } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
-import type { Vehicle, CostCalculationData } from '@/lib/types';
+import type { Vehicle, CostCalculationData, Customer } from '@/lib/types';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useSearchParams } from 'next/navigation';
 
@@ -136,6 +136,8 @@ const defaultValues: CostCalculationData = {
     rent: 6000,
     numVehicles: 5,
     generalInsurance: 500,
+    manualKmRate: 0,
+    manualHourRate: 0,
 };
 
 
@@ -145,6 +147,8 @@ export default function CostCalculationPage() {
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
     const { toast } = useToast();
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+    const [customers, setCustomers] = useState<Customer[]>([]);
+    const [selectedCustomerId, setSelectedCustomerId] = useState<string>('none');
     const [selectedVehicleId, setSelectedVehicleId] = useState<string>('template');
     const [loading, setLoading] = useState(true);
     const searchParams = useSearchParams();
@@ -173,6 +177,23 @@ export default function CostCalculationPage() {
         };
         fetchVehicles();
         const ch = supabase.channel('costcalc-vehicles').on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, fetchVehicles).subscribe();
+        return () => { active = false; ch.unsubscribe(); };
+    }, []);
+
+    useEffect(() => {
+        let active = true;
+        const fetchCustomers = async () => {
+            const { data, error } = await supabase.from('customers').select('*').order('company_name');
+            if (!active) return;
+            if (error) {
+                console.error('Error fetching customers:', error);
+                return;
+            }
+            const mapped = (data || []).map(row => mapSupabaseToApp<Customer>(row));
+            setCustomers(mapped);
+        };
+        fetchCustomers();
+        const ch = supabase.channel('costcalc-customers').on('postgres_changes', { event: '*', schema: 'public', table: 'customers' }, fetchCustomers).subscribe();
         return () => { active = false; ch.unsubscribe(); };
     }, []);
 
@@ -282,6 +303,27 @@ export default function CostCalculationPage() {
         }).length;
     }, []);
 
+    const handleCustomerRateSelect = (customerId: string) => {
+        if (!customerId || customerId === 'none') {
+            setSelectedCustomerId('none');
+            return;
+        }
+        setSelectedCustomerId(customerId);
+        const customer = customers.find(c => c.id === customerId);
+        if (!customer) return;
+
+        if (typeof customer.mileageRate === 'number') {
+            setValue('manualKmRate', Number(customer.mileageRate));
+        }
+        if (typeof customer.hourlyRate === 'number') {
+            setValue('manualHourRate', Number(customer.hourlyRate));
+        }
+        toast({
+            title: 'Tarieven bijgewerkt',
+            description: `Overgenomen van ${customer.companyName}.`,
+        });
+    };
+
     const calculations = useMemo(() => {
         const num = (value: any): number => (typeof value === 'number' && !isNaN(value) ? value : 0);
 
@@ -337,6 +379,8 @@ export default function CostCalculationPage() {
         const rent = num(watchedValues.rent);
         const numVehicles = num(watchedValues.numVehicles);
         const generalInsurance = num(watchedValues.generalInsurance);
+        const manualKmRate = num(watchedValues.manualKmRate);
+        const manualHourRate = num(watchedValues.manualHourRate);
 
         const emptySalary = { week: 0, month: 0, hour100: 0, hour130: 0, hour150: 0 };
         const salaryData = (salaryScale && salaryScales[salaryScale] && salaryScales[salaryScale][salaryStep]) 
@@ -446,6 +490,14 @@ export default function CostCalculationPage() {
             get totalAllInHour() { return tariffs.allInHourRate * productiveHoursYear },
         };
 
+        const manualTotals = {
+            kmRate: manualKmRate,
+            hourRate: manualHourRate,
+            kmRevenue: manualKmRate * expectedYearlyKm,
+            hourRevenue: manualHourRate * productiveHoursYear,
+            get total() { return this.kmRevenue + this.hourRevenue; }
+        };
+
 
         return {
             diensturen,
@@ -474,7 +526,8 @@ export default function CostCalculationPage() {
             totalValueOfVacationDays,
             generalCosts,
             tariffs,
-            revenue
+            revenue,
+            manualTotals,
         };
 
     }, [watchedValues, workableDaysInYear]);
@@ -726,41 +779,84 @@ export default function CostCalculationPage() {
                             <Field label="Totaal loonkosten" disabled={!watchedValues.includePersonnel}><Input value={formatCurrency(calculations.totalPersonnelCosts, 0)} className={cn(calculatedClass, "font-bold", !watchedValues.includePersonnel && "line-through")} readOnly /></Field>
                          </Section>
                          <Section title="Resultaat" className="bg-amber-100">
-                             <div className="grid grid-cols-3 gap-2 items-center text-center font-bold px-2">
+                            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between mb-4 px-2">
+                                <div>
+                                    <Label className="text-sm font-semibold text-muted-foreground">Klanttarief overnemen</Label>
+                                    <p className="text-xs text-muted-foreground">
+                                        Kies een klant om het laatst bekende km- en uurtarief automatisch in te vullen.
+                                    </p>
+                                </div>
+                                <Select
+                                    value={selectedCustomerId}
+                                    onValueChange={handleCustomerRateSelect}
+                                    disabled={customers.length === 0}
+                                >
+                                    <SelectTrigger className="md:w-72">
+                                        <SelectValue placeholder={customers.length ? "Selecteer klant" : "Geen klanten beschikbaar"} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="none">Geen selectie</SelectItem>
+                                        {customers.map(customer => (
+                                            <SelectItem key={customer.id} value={customer.id}>
+                                                {customer.companyName}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                             <div className="grid grid-cols-4 gap-2 items-center text-center font-bold px-2">
                                 <Label></Label>
                                 <Label>Gecombineerd (EN)</Label>
                                 <Label>All-in (OF)</Label>
+                                <Label>Eigen invoer</Label>
                             </div>
                             <div className="space-y-2">
-                                <div className="grid grid-cols-3 gap-2 items-center">
+                                <div className="grid grid-cols-4 gap-2 items-center">
                                     <Label>KM tarief</Label>
                                     <Input value={formatCurrency(calculations.tariffs.combinedKmRate)} className={calculatedClass} readOnly />
                                     <Input value={formatCurrency(calculations.tariffs.allInKmRate)} className={calculatedClass} readOnly />
+                                    <Input
+                                        type="number"
+                                        step="0.01"
+                                        {...register("manualKmRate", { valueAsNumber: true })}
+                                        className={inputClass}
+                                        placeholder="Voer km tarief in"
+                                    />
                                 </div>
-                                <div className="grid grid-cols-3 gap-2 items-center">
+                                <div className="grid grid-cols-4 gap-2 items-center">
                                     <Label>Uurtarief</Label>
                                     <Input value={formatCurrency(calculations.tariffs.combinedHourRate)} className={calculatedClass} readOnly />
                                     <Input value={formatCurrency(calculations.tariffs.allInHourRate)} className={calculatedClass} readOnly />
+                                    <Input
+                                        type="number"
+                                        step="0.01"
+                                        {...register("manualHourRate", { valueAsNumber: true })}
+                                        className={inputClass}
+                                        placeholder="Voer uurtarief in"
+                                    />
                                 </div>
                             </div>
                              <CardHeader className="p-0 pb-2 mt-4 -mx-6 px-6">
                                 <CardTitle className="text-base">Jaaromzet o.b.v. Tarief</CardTitle>
                             </CardHeader>
                             <div className="space-y-2">
-                               <div className="grid grid-cols-3 gap-2 items-center">
+                               <div className="grid grid-cols-4 gap-2 items-center">
                                     <Label>Totaal KM</Label>
                                     <Input value={formatCurrency(calculations.revenue.kmRevenue, 0)} className={calculatedClass} readOnly />
                                     <Input value={formatCurrency(calculations.revenue.totalAllInKm, 0)} className={calculatedClass} readOnly />
+                                    <Input value={formatCurrency(calculations.manualTotals.kmRevenue, 0)} className={calculatedClass} readOnly />
                                 </div>
-                                <div className="grid grid-cols-3 gap-2 items-center">
+                                <div className="grid grid-cols-4 gap-2 items-center">
                                     <Label>Totaal Uur</Label>
                                     <Input value={formatCurrency(calculations.revenue.hourRevenue, 0)} className={calculatedClass} readOnly />
                                     <Input value={formatCurrency(calculations.revenue.totalAllInHour, 0)} className={calculatedClass} readOnly />
+                                    <Input value={formatCurrency(calculations.manualTotals.hourRevenue, 0)} className={calculatedClass} readOnly />
                                 </div>
-                                <div className="grid grid-cols-3 gap-2 items-center">
+                                <div className="grid grid-cols-4 gap-2 items-center">
                                     <Label>Totaal Omzet</Label>
                                     <Input value={formatCurrency(calculations.revenue.totalCombined, 0)} className={cn(calculatedClass, "font-bold")} readOnly />
-                                    <Input value={formatCurrency(calculations.revenue.totalCombined, 0)} className={cn(calculatedClass, "font-bold")} readOnly />
+                                    <Input value={formatCurrency(calculations.revenue.totalAllInKm + calculations.revenue.totalAllInHour, 0)} className={cn(calculatedClass, "font-bold")} readOnly />
+                                    <Input value={formatCurrency(calculations.manualTotals.total, 0)} className={cn(calculatedClass, "font-bold")} readOnly />
                                 </div>
                             </div>
                         </Section>

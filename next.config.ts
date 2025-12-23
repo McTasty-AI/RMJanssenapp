@@ -29,11 +29,18 @@ const nextConfig: NextConfig = {
     config.externals = (config.externals || []).filter(
       (external: any) => !(typeof external === 'string' && external.includes('pdf.worker'))
     );
+    
+    // Ignore pdfjs-dist build files that don't exist in newer versions
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'pdfjs-dist/build/pdf.js': false,
+      'pdfjs-dist/build/pdf.worker.js': false,
+    };
+    
     return config;
   },
   // Turbopack configuration for development builds
   turbopack: {
-    root: process.cwd(),
     resolveAlias: {
       fs: './noop.js',
     },

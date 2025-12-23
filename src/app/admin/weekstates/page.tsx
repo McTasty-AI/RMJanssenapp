@@ -211,7 +211,10 @@ const PlateLogViewer = ({ allLogs, users, vehicles, loading, onUnlock, onDownloa
     const [selectedPlate, setSelectedPlate] = useState<string>('');
     
     const approvedLogs = allLogs.filter(log => log.status === 'approved');
-    const logsForPlate = selectedPlate ? approvedLogs.filter(log => log.days && log.days.some(day => day.licensePlate === selectedPlate)) : [];
+    const logsForPlate = selectedPlate ? approvedLogs.filter(log => {
+        if (!log.days || !Array.isArray(log.days)) return false;
+        return log.days.some(day => day.licensePlate && day.licensePlate.trim().toUpperCase() === selectedPlate.trim().toUpperCase());
+    }) : [];
 
     return (
         <div className="space-y-4">
@@ -221,9 +224,16 @@ const PlateLogViewer = ({ allLogs, users, vehicles, loading, onUnlock, onDownloa
                         <SelectValue placeholder="Kies een kenteken..." />
                     </SelectTrigger>
                     <SelectContent>
-                        {vehicles.filter(v => v.status === 'active').map(v => (
-                            <SelectItem key={v.id} value={v.licensePlate}>{v.licensePlate}</SelectItem>
-                        ))}
+                        {vehicles
+                            .filter(v => {
+                                if (!v.licensePlate) return false;
+                                // Include vehicles with status "Actief" (case-insensitive) or no status
+                                if (!v.status) return true;
+                                return v.status.toLowerCase() === 'actief';
+                            })
+                            .map(v => (
+                                <SelectItem key={v.id} value={v.licensePlate}>{v.licensePlate}</SelectItem>
+                            ))}
                     </SelectContent>
                 </Select>
             </div>

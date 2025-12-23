@@ -11,7 +11,7 @@ create extension if not exists pgcrypto;
 -- =====================================================
 do language plpgsql $$ begin
   create type day_status as enum (
-    'gewerkt','ziek','vrij','ouderschapsverlof','weekend','feestdag','atv','persoonlijk','onbetaald'
+    'gewerkt','ziek','vrij','ouderschapsverlof','weekend','feestdag','atv','persoonlijk','onbetaald','cursus'
   );
 exception when duplicate_object then null; end $$;
 
@@ -552,6 +552,7 @@ create table if not exists toll_entries (
   country text not null,            -- Land waar tol is betaald (bijv. 'DE', 'BE', 'FR')
   license_plate text not null,      -- Kenteken dat gereden heeft
   usage_date date not null,         -- Datum gebruik
+  usage_time text,                  -- Optioneel tijdstip (HH:MM) voor extra uniekheid
   amount numeric not null,          -- Bedrag excl. BTW
   vat_rate numeric not null,        -- BTW percentage (bijv. 21)
   week_id text,                     -- Afgeleide week-id 'YYYY-WW' voor groepering/filters

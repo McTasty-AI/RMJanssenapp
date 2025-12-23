@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase/client";
 import type { TollEntry, Vehicle } from "@/lib/types";
@@ -20,14 +21,44 @@ type ParsedRow = {
   country: string;
   licensePlate: string;
   usageDate: string; // ISO yyyy-MM-dd
+  usageTime?: string; // HH:mm (optioneel)
   amount: number;
   vatRate: number;
   weekId: string;
   source?: string;
 };
 
+type ColumnMapping = {
+  usageDate?: string;
+  usageTime?: string;
+  licensePlate?: string;
+  country?: string;
+  amount?: string;
+  vatRate?: string;
+};
+
 // Helper type for tri-state checkbox handling in JSX
 type CheckedTri = boolean | "indeterminate";
+const REQUIRED_MAPPING_FIELDS: (keyof ColumnMapping)[] = ["usageDate", "licensePlate", "country", "amount"];
+const SELECT_NONE_VALUE = "__none__";
+const mappingFieldMeta: Array<{ key: keyof ColumnMapping; label: string; hint: string; required?: boolean }> = [
+  { key: "usageDate", label: "Datum gebruik", required: true, hint: "Kolom met de datum (bijv. 12-12-2025)." },
+  { key: "usageTime", label: "Tijdstip", hint: "Optioneel: tijdstip zoals 08:30 of 8.5." },
+  { key: "licensePlate", label: "Kenteken", required: true, hint: "Kolom met het kenteken." },
+  { key: "country", label: "Land", required: true, hint: "Kolom met land/regio (bijv. BE, Duitsland)." },
+  { key: "amount", label: "Bedrag (excl. btw)", required: true, hint: "Tolbedrag exclusief btw." },
+  { key: "vatRate", label: "BTW %", hint: "BTW percentage. Laat leeg om per land de standaard te gebruiken." },
+];
+
+type ColumnOption = { value: string; label: string };
+
+const columnValueFromIndex = (idx: number) => `col-${idx}`;
+const columnIndexFromValue = (value?: string): number | undefined => {
+  if (!value || value === SELECT_NONE_VALUE) return undefined;
+  if (!value.startsWith("col-")) return undefined;
+  const parsed = Number(value.slice(4));
+  return Number.isNaN(parsed) ? undefined : parsed;
+};
 
 function toIsoDate(v: any): string | null {
   if (v == null || v === "") return null;
@@ -77,11 +108,43 @@ function weekIdFromIso(dateIso: string): string {
   return `${y}-${w}`;
 }
 
+function formatInvoiceReference(reference?: string | null): string {
+  if (!reference) return '-';
+  // Extract week, year, and license plate from reference
+  // Format: "Week xx - yyyy (kenteken)" -> "Week xx - yyyy - kenteken"
+  const weekMatch = reference.match(/week\s+(\d{1,2})\s*[-/]\s*(\d{4})/i);
+  const plateMatch = reference.match(/\(([A-Z0-9-]{5,})\)/i);
+  
+  if (weekMatch && plateMatch) {
+    const week = weekMatch[1].padStart(2, '0');
+    const year = weekMatch[2];
+    const plate = plateMatch[1].toUpperCase();
+    return `Week ${week} - ${year} - ${plate}`;
+  }
+  
+  // Fallback: return original reference if format doesn't match
+  return reference;
+}
+
+function buildEntryGroupMeta(entry: TollEntry) {
+  const d = new Date(entry.usageDate);
+  const weekId = entry.weekId || `${getYear(d)}-${getISOWeek(d)}`;
+  const day = format(d, 'EEEE', { locale: nl });
+  const dateIso = entry.usageDate;
+  return {
+    weekId,
+    day,
+    dateIso,
+    key: `${weekId}|${day}|${entry.licensePlate}|${entry.country}|${entry.vatRate}`,
+  };
+}
+
 function normalizeHeader(h: string): string {
   const key = (h || '').toString().trim().toLowerCase();
   // Fuzzy contains to be robust against varied exports
   if (key.includes('serviceland') || key.includes('land') || key.includes('country')) return 'country';
   if (key.includes('nummerplaat') || key.includes('kenteken') || key.includes('license') || key.includes('plate')) return 'licensePlate';
+  if (key.includes('tijd') || key.includes('time') || key.includes('hour')) return 'usageTime';
   if (key.includes('datum gebruik') || key.includes('datum') || key.includes('date') || key.includes('gebruik')) return 'usageDate';
   if (key.includes('berekend bedrag') || key.includes('exclusief') || key.includes('ex btw') || key.includes('bedrag') || key.includes('ex') || key.includes('excl') || key.includes('amount')) return 'amount';
   if (key.includes('btw%') || key.includes('btw %') || key.includes('btw') || key.includes('vat')) return 'vatRate';
@@ -283,11 +346,132 @@ function parseWithFixedColumns(rowsRaw: any[][], fileName: string, sheetName: st
   return rows;
 }
 
+function buildColumnOptions(headerCells: any[]): ColumnOption[] {
+  return headerCells.map((cell, idx) => {
+    const label = (cell ?? "").toString().trim();
+    return { value: columnValueFromIndex(idx), label: label.length > 0 ? label : `Kolom ${idx + 1}` };
+  });
+}
+
+function buildAutoMapping(normalizedHeaders: string[], rows: any[][]): ColumnMapping {
+  const mapping: ColumnMapping = {};
+  normalizedHeaders.forEach((header, idx) => {
+    const value = columnValueFromIndex(idx);
+    switch (header) {
+      case "usageDate":
+        if (!mapping.usageDate) mapping.usageDate = value;
+        break;
+      case "usageTime":
+        if (!mapping.usageTime) mapping.usageTime = value;
+        break;
+      case "licensePlate":
+        if (!mapping.licensePlate) mapping.licensePlate = value;
+        break;
+      case "country":
+        if (!mapping.country) mapping.country = value;
+        break;
+      case "amount":
+        if (!mapping.amount) mapping.amount = value;
+        break;
+      case "vatRate":
+        if (!mapping.vatRate) mapping.vatRate = value;
+        break;
+    }
+  });
+  if (rows.length > 0) {
+    const inferred = inferColumns(rows);
+    if (!mapping.usageDate && inferred.dateCol !== undefined) mapping.usageDate = columnValueFromIndex(inferred.dateCol);
+    if (!mapping.licensePlate && inferred.plateCol !== undefined) mapping.licensePlate = columnValueFromIndex(inferred.plateCol);
+    if (!mapping.country && inferred.countryCol !== undefined) mapping.country = columnValueFromIndex(inferred.countryCol);
+    if (!mapping.amount && inferred.amountCol !== undefined) mapping.amount = columnValueFromIndex(inferred.amountCol);
+    if (!mapping.vatRate && inferred.vatCol !== undefined) mapping.vatRate = columnValueFromIndex(inferred.vatCol);
+  }
+  return mapping;
+}
+
+const formatTimePart = (value: number) => String(Math.max(0, value)).padStart(2, "0");
+
+function secondsToTimeString(totalSeconds: number): string {
+  const normalized = ((totalSeconds % 86400) + 86400) % 86400;
+  const hours = Math.floor(normalized / 3600);
+  const minutes = Math.floor((normalized % 3600) / 60);
+  const seconds = normalized % 60;
+  return `${formatTimePart(hours)}:${formatTimePart(minutes)}:${formatTimePart(seconds)}`;
+}
+
+function parseUsageTime(value: any): string | undefined {
+  if (value == null || value === "") return undefined;
+  if (value instanceof Date) {
+    return secondsToTimeString(value.getHours() * 3600 + value.getMinutes() * 60 + value.getSeconds());
+  }
+  if (typeof value === "number") {
+    const fraction = ((value % 1) + 1) % 1;
+    return secondsToTimeString(Math.round(fraction * 24 * 60 * 60));
+  }
+  const text = String(value).trim();
+  const match = text.match(/(\d{1,2}:\d{2}:\d{2})/);
+  if (!match) return undefined;
+  const [hh, mm, ss] = match[1].split(":").map((part) => Number(part));
+  if ([hh, mm, ss].some((n) => Number.isNaN(n))) return undefined;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss > 59) return undefined;
+  return `${formatTimePart(hh)}:${formatTimePart(mm)}:${formatTimePart(ss)}`;
+}
+
+function transformRowsWithMapping(rows: any[][], mapping: ColumnMapping, fileName: string, sheetName: string): ParsedRow[] {
+  const idxDate = columnIndexFromValue(mapping.usageDate);
+  const idxPlate = columnIndexFromValue(mapping.licensePlate);
+  const idxCountry = columnIndexFromValue(mapping.country);
+  const idxAmount = columnIndexFromValue(mapping.amount);
+  if ([idxDate, idxPlate, idxCountry, idxAmount].some((idx) => idx === undefined)) return [];
+  const idxVat = columnIndexFromValue(mapping.vatRate);
+  const idxTime = columnIndexFromValue(mapping.usageTime);
+  const sourceLabel = fileName ? (sheetName ? `${fileName} (${sheetName})` : fileName) : sheetName || undefined;
+
+  const result: ParsedRow[] = [];
+  for (const row of rows) {
+    if (!Array.isArray(row)) continue;
+    const rawDate = idxDate !== undefined ? row[idxDate] : undefined;
+    const iso = rawDate instanceof Date
+      ? `${rawDate.getFullYear()}-${String(rawDate.getMonth() + 1).padStart(2, "0")}-${String(rawDate.getDate()).padStart(2, "0")}`
+      : toIsoDate(rawDate);
+    if (!iso) continue;
+    const rawPlate = idxPlate !== undefined ? row[idxPlate] : undefined;
+    const plate = String(rawPlate ?? "").trim().toUpperCase();
+    if (!plate) continue;
+    const rawCountry = idxCountry !== undefined ? row[idxCountry] : undefined;
+    const country = mapServiceLandToCountryCode(String(rawCountry ?? "").trim());
+    if (!country) continue;
+    const rawAmount = idxAmount !== undefined ? row[idxAmount] : undefined;
+    const amountNum = parseMoney(rawAmount);
+    if (amountNum == null) continue;
+    const rawVat = idxVat !== undefined ? row[idxVat] : undefined;
+    const vatParsed = rawVat == null ? null : parseVat(rawVat);
+    const vatRate = vatParsed == null ? defaultVatForCountry(country) : vatParsed;
+    const usageTime = idxTime !== undefined ? parseUsageTime(row[idxTime]) : undefined;
+    result.push({
+      country,
+      licensePlate: plate,
+      usageDate: iso,
+      usageTime,
+      amount: amountNum,
+      vatRate,
+      weekId: weekIdFromIso(iso),
+      source: sourceLabel,
+    });
+  }
+  return result;
+}
+
 export default function TollOverviewPage() {
   const { toast } = useToast();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [fileName, setFileName] = useState<string>("");
   const [parsed, setParsed] = useState<ParsedRow[]>([]);
+  const [columnOptions, setColumnOptions] = useState<ColumnOption[]>([]);
+  const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
+  const [rawSheetRows, setRawSheetRows] = useState<any[][]>([]);
+  const [selectedSheetName, setSelectedSheetName] = useState<string>("");
+  const [normalizedHeaders, setNormalizedHeaders] = useState<string[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [filterWeek, setFilterWeek] = useState<string>("");
   const [filterPlate, setFilterPlate] = useState<string>("");
@@ -297,8 +481,30 @@ export default function TollOverviewPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'raw' | 'summary'>("raw");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const entryMetaCache = useMemo(() => new Map<string, ReturnType<typeof buildEntryGroupMeta>>(), []);
   const [invoices, setInvoices] = useState<Array<{ id: string; invoice_number: string; reference?: string; status?: string; created_at?: string }>>([]);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
+  const parseInvoiceReference = (value?: string | null) => {
+    if (!value) return null;
+    const match = value.match(/week\s+(\d{1,2})\s*[-/]\s*(\d{4}).*?([A-Za-z0-9-]{5,})\)?$/i);
+    if (!match) return null;
+    const [, weekPart, yearPart, platePart] = match;
+    const week = weekPart.padStart(2, "0");
+    return { weekId: `${yearPart}-${week}`, plate: platePart.toUpperCase() };
+  };
+
+  const findInvoiceIdForGroup = (weekId: string, plate: string) => {
+    if (!weekId || !plate) return undefined;
+    const [year, weekPart] = weekId.split("-");
+    if (!year || !weekPart) return undefined;
+    const normalizedWeekId = `${year}-${weekPart.padStart(2, "0")}`;
+    const normalizedPlate = plate.toUpperCase();
+    const invoice = invoices.find((inv) => {
+      const context = parseInvoiceReference(inv.reference || inv.invoice_number);
+      return context && context.weekId === normalizedWeekId && context.plate === normalizedPlate;
+    });
+    return invoice?.id;
+  };
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('nl-NL', { style: 'currency', currency: 'EUR' }).format(value ?? 0);
@@ -354,115 +560,128 @@ export default function TollOverviewPage() {
     return Array.from(new Set(items));
   }, []);
 
+  useEffect(() => {
+    if (rawSheetRows.length === 0) {
+      setParsed([]);
+      return;
+    }
+    const ready = REQUIRED_MAPPING_FIELDS.every((field) => {
+      const value = columnMapping[field];
+      return value && value !== SELECT_NONE_VALUE;
+    });
+    if (!ready) {
+      setParsed([]);
+      return;
+    }
+    const next = transformRowsWithMapping(rawSheetRows, columnMapping, fileName, selectedSheetName);
+    setParsed(next);
+  }, [rawSheetRows, columnMapping, fileName, selectedSheetName]);
+
   const handleFile = async (file: File) => {
     setParsed([]);
+    setColumnOptions([]);
+    setColumnMapping({});
+    setRawSheetRows([]);
+    setNormalizedHeaders([]);
+    setSelectedSheetName("");
     setFileName(file.name);
     try {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
 
-      let best: { sheet: string; rows: ParsedRow[] } | null = null;
+      let best: {
+        sheet: string;
+        rows: any[][];
+        normalizedHeaders: string[];
+        options: ColumnOption[];
+        mapping: ColumnMapping;
+        preview: ParsedRow[];
+        rowCount: number;
+      } | null = null;
 
       for (const sheetName of wb.SheetNames) {
         const ws = wb.Sheets[sheetName];
         const raw = XLSX.utils.sheet_to_json<any>(ws, { header: 1 });
         if (!raw || raw.length === 0) continue;
         const { headers, startIndex } = detectHeaderRow(raw as any[][]);
-        let rowsRaw = raw.slice(startIndex);
-        let mapped: ParsedRow[] = [];
-        // Detect specifiek Elcon-profiel: kolommen op vaste posities aanwezig in headerregel
-        const headerRow = raw[startIndex-1] as any[] | undefined;
-        const headerCheck = (idx: number, pattern: RegExp) => (headerRow && headerRow[idx] && pattern.test(String(headerRow[idx]).toLowerCase()));
-        const looksLikeElcon = headerRow && headerRow.length >= 26 && (
-          headerCheck(0, /service.?land|land|country/) &&
-          headerCheck(3, /nummerplaat|kenteken|license|plate/) &&
-          headerCheck(11, /datum|date/) &&
-          headerCheck(23, /berekend|ex.?btw|excl|amount|bedrag/) &&
-          headerCheck(25, /btw|vat/)
+        const headerRow = (raw[startIndex - 1] as any[]) || [];
+        const dataRows = (raw.slice(startIndex) as any[][]).filter(
+          (row) => Array.isArray(row) && row.some((cell) => cell !== undefined && cell !== null && cell !== "")
         );
+        if (headerRow.length === 0 && dataRows.length === 0) continue;
 
-        if (looksLikeElcon) {
-          mapped = parseWithFixedColumns(rowsRaw as any[][], file.name, sheetName);
-        }
-        // Path A: header-based mapping
-        if (mapped.length === 0) {
-          for (const row of rowsRaw) {
-            const obj: any = {};
-            headers.forEach((h, idx) => { obj[h] = row[idx]; });
-            const dateCell = obj['usageDate'];
-            const iso = dateCell instanceof Date ? `${dateCell.getFullYear()}-${String(dateCell.getMonth()+1).padStart(2,'0')}-${String(dateCell.getDate()).padStart(2,'0')}` : toIsoDate(dateCell);
-            if (!iso) continue;
-            const amountNum = parseMoney(obj['amount']);
-            const vatParsed = parseVat(obj['vatRate']);
-            const vatNum = vatParsed == null ? defaultVatForCountry(country) : vatParsed;
-            const country = mapServiceLandToCountryCode(String(obj['country'] || '').trim());
-            const plate = String(obj['licensePlate'] || '').trim().toUpperCase();
-            if (!country || !plate) continue;
-            mapped.push({
-              country,
-              licensePlate: plate,
-              usageDate: iso,
-              amount: amountNum ?? 0,
-              vatRate: vatNum ?? 21,
-              weekId: weekIdFromIso(iso),
-              source: `${file.name} (${sheetName})`,
-            });
-          }
-        }
-        // Path B: content inference if header path yielded too few
-        if (mapped.length === 0) {
-          const infer = inferColumns(rowsRaw as any[][]);
-          const tmp: ParsedRow[] = [];
-          for (const row of rowsRaw) {
-            const vDate = infer.dateCol !== undefined ? row[infer.dateCol] : undefined;
-            const vPlate = infer.plateCol !== undefined ? row[infer.plateCol] : undefined;
-            const vCountry = infer.countryCol !== undefined ? row[infer.countryCol] : undefined;
-            const vAmount = infer.amountCol !== undefined ? row[infer.amountCol] : undefined;
-            const vVat = infer.vatCol !== undefined ? row[infer.vatCol] : undefined;
-            const iso = vDate instanceof Date ? `${vDate.getFullYear()}-${String(vDate.getMonth()+1).padStart(2,'0')}-${String(vDate.getDate()).padStart(2,'0')}` : toIsoDate(vDate);
-            if (!iso) continue;
-            const plate = String(vPlate || '').trim().toUpperCase();
-            const country = mapServiceLandToCountryCode(String(vCountry || '').trim());
-            if (!plate || !country) continue;
-            const amountNum = parseMoney(vAmount) ?? 0;
-            const vatParsed = parseVat(vVat);
-            const vatNum = vatParsed == null ? defaultVatForCountry(country) : vatParsed;
-            tmp.push({
-              country,
-              licensePlate: plate,
-              usageDate: iso,
-              amount: amountNum,
-              vatRate: vatNum,
-              weekId: weekIdFromIso(iso),
-              source: `${file.name} (${sheetName})`,
-            });
-          }
-          mapped = tmp;
-        }
-        // Path C: specifiek vast kolomprofiel (A,D,L,X,Z) als beide paden niets opleveren
-        if (mapped.length === 0) {
-          mapped = parseWithFixedColumns(rowsRaw as any[][], file.name, sheetName);
-        }
-        if (!best || mapped.length > best.rows.length) {
-          best = { sheet: sheetName, rows: mapped };
+        let columnCount = headerRow.length;
+        for (const row of dataRows) columnCount = Math.max(columnCount, row?.length || 0);
+        const headerCells = Array.from({ length: columnCount }, (_, idx) => headerRow[idx] ?? "");
+        const normalized = headerCells.map((cell, idx) => headers[idx] ?? normalizeHeader(String(cell || "")));
+        const options = buildColumnOptions(headerCells);
+        const mapping = buildAutoMapping(normalized, dataRows);
+        const preview = transformRowsWithMapping(dataRows, mapping, file.name, sheetName);
+
+        const candidate = {
+          sheet: sheetName,
+          rows: dataRows,
+          normalizedHeaders: normalized,
+          options,
+          mapping,
+          preview,
+          rowCount: dataRows.length,
+        };
+        if (
+          !best ||
+          preview.length > best.preview.length ||
+          (preview.length === best.preview.length && dataRows.length > best.rowCount)
+        ) {
+          best = candidate;
         }
       }
 
-      const finalRows = best?.rows || [];
-      setParsed(finalRows);
-      if (finalRows.length === 0) {
+      if (!best) {
         toast({
-          variant: 'destructive',
-          title: 'Geen regels herkend',
-          description: 'Controleer of het bestand kolommen bevat voor Land, Kenteken, Datum gebruik, Bedrag (ex) en BTW% Ã¢â‚¬â€ eventueel op een andere tab/sheet of lager op de pagina.',
+          variant: "destructive",
+          title: "Geen tabbladen gevonden",
+          description: "Het bestand bevat geen herkenbare data.",
+        });
+        return;
+      }
+
+      setSelectedSheetName(best.sheet);
+      setColumnOptions(best.options);
+      setNormalizedHeaders(best.normalizedHeaders);
+      setColumnMapping(best.mapping);
+      setRawSheetRows(best.rows);
+      setParsed(best.preview);
+
+      if (best.preview.length === 0) {
+        toast({
+          title: "Kolommen koppelen",
+          description: "Geen regels herkend. Koppel de kolommen handmatig om een preview te zien.",
         });
       } else {
-        toast({ title: `Voorbeeld geladen (${finalRows.length} regels)` });
+        toast({ title: `Voorbeeld geladen (${best.preview.length} regels)` });
       }
     } catch (e) {
       console.error(e);
       toast({ variant: "destructive", title: "Fout bij lezen Excel" });
     }
+  };
+
+  const handleMappingChange = (field: keyof ColumnMapping, value: string) => {
+    setColumnMapping((prev) => {
+      if (value === SELECT_NONE_VALUE) {
+        if (!(field in prev)) return prev;
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      }
+      if (prev[field] === value) return prev;
+      return { ...prev, [field]: value };
+    });
+  };
+
+  const handleAutoDetectMapping = () => {
+    if (normalizedHeaders.length === 0 || rawSheetRows.length === 0) return;
+    setColumnMapping(buildAutoMapping(normalizedHeaders, rawSheetRows));
   };
 
   const handleImport = async () => {
@@ -474,7 +693,7 @@ export default function TollOverviewPage() {
       // This prevents importing duplicates regardless of whether they're already applied to an invoice
       const { data: existingEntries, error: fetchError } = await supabase
         .from("toll_entries")
-        .select("license_plate, usage_date, country, amount, vat_rate, applied_invoice_id");
+        .select("license_plate, usage_date, usage_time, country, amount, vat_rate, applied_invoice_id");
       
       if (fetchError) {
         console.error("Error fetching existing entries:", fetchError);
@@ -487,7 +706,7 @@ export default function TollOverviewPage() {
       const appliedKeys = new Set<string>(); // Track which ones are already applied to invoices
       
       (existingEntries || []).forEach((entry: any) => {
-        const key = `${entry.license_plate}|${entry.usage_date}|${entry.country}|${entry.amount}|${entry.vat_rate}`;
+        const key = `${entry.license_plate}|${entry.usage_date}|${entry.usage_time || ""}|${entry.country}|${entry.amount}|${entry.vat_rate}`;
         existingKeys.add(key);
         if (entry.applied_invoice_id) {
           appliedKeys.add(key);
@@ -500,7 +719,7 @@ export default function TollOverviewPage() {
       const duplicatesAlreadyApplied: ParsedRow[] = [];
       
       for (const r of parsed) {
-        const key = `${r.licensePlate}|${r.usageDate}|${r.country}|${r.amount}|${r.vatRate}`;
+        const key = `${r.licensePlate}|${r.usageDate}|${r.usageTime || ""}|${r.country}|${r.amount}|${r.vatRate}`;
         if (existingKeys.has(key)) {
           if (appliedKeys.has(key)) {
             duplicatesAlreadyApplied.push(r);
@@ -550,6 +769,7 @@ export default function TollOverviewPage() {
           country: r.country,
           license_plate: r.licensePlate,
           usage_date: r.usageDate,
+          usage_time: r.usageTime || null,
           amount: r.amount,
           vat_rate: r.vatRate,
           week_id: r.weekId,
@@ -569,6 +789,11 @@ export default function TollOverviewPage() {
         description: `${rowsToImport.length} nieuwe regels toegevoegd${duplicateInfo ? `, ${duplicateInfo} overgeslagen` : ''}` 
       });
       setParsed([]);
+      setColumnOptions([]);
+      setColumnMapping({});
+      setRawSheetRows([]);
+      setNormalizedHeaders([]);
+      setSelectedSheetName("");
     } catch (e: any) {
       console.error(e);
       toast({ variant: "destructive", title: "Import mislukt", description: e.message || "Onbekende fout" });
@@ -590,6 +815,7 @@ export default function TollOverviewPage() {
         country: r.country,
         licensePlate: r.license_plate,
         usageDate: r.usage_date,
+        usageTime: r.usage_time || undefined,
         amount: Number(r.amount) || 0,
         vatRate: (Number.isFinite(Number(r.vat_rate)) ? Number(r.vat_rate) : 21),
         weekId: r.week_id || undefined,
@@ -761,420 +987,206 @@ export default function TollOverviewPage() {
     }
   };
 
-  // Apply selected items to a chosen invoice as invoice lines.
+  // Apply selected items to gekozen of automatisch gevonden facturen.
   const handleApplySelectedToInvoice = async () => {
-    const invoiceId = selectedInvoiceId;
-    if (!invoiceId) { toast({ variant: 'destructive', title: 'Kies eerst een factuur' }); return; }
-    const selected = entries.filter(e => selectedIds.has(e.id) && !e.appliedInvoiceId);
-    if (selected.length === 0) { toast({ variant: 'destructive', title: 'Geen (nieuwe) regels geselecteerd' }); return; }
-
-    const inv = invoices.find(i => i.id === invoiceId) as any;
-    const parseInvoicePlate = (invRef?: string) => {
-      const m = String(invRef || '').match(/\(([A-Za-z0-9\-]+)\)\s*$/);
-      return m ? m[1].toUpperCase() : '';
-    };
-
-    // Group exactly zoals samenvatting: Week|Dag|Kenteken|Land|BTW
-    const byKey = new Map<string, { weekId: string; day: string; plate: string; country: string; vat: number; total: number; itemIds: string[]; firstDate: string }>();
-    for (const e of selected) {
-      const d = new Date(e.usageDate);
-      const w = e.weekId || `${getYear(d)}-${getISOWeek(d)}`;
-      const day = format(d, 'EEEE', { locale: nl });
-      const key = `${w}|${day}|${e.licensePlate}|${e.country}|${e.vatRate}`;
-      const curr = byKey.get(key);
-      if (curr) {
-        curr.total += e.amount;
-        curr.itemIds.push(e.id);
-      } else {
-        const dd0 = String(d.getDate()).padStart(2,'0');
-        const mm0 = String(d.getMonth()+1).padStart(2,'0');
-        const yyyy0 = d.getFullYear();
-        byKey.set(key, { weekId: w, day, plate: e.licensePlate, country: e.country, vat: e.vatRate, total: e.amount, itemIds: [e.id], firstDate: `${yyyy0}-${mm0}-${dd0}` });
-      }
+    const selected = entries.filter((e) => selectedIds.has(e.id) && !e.appliedInvoiceId);
+    if (selected.length === 0) {
+      toast({ variant: 'destructive', title: 'Geen (nieuwe) regels geselecteerd' });
+      return;
     }
-    try {
-      // Haal bestaande factuurregels (voor witregels matching)
-      const { data: invLines } = await supabase
-        .from('invoice_lines')
-        .select('id, description, quantity, unit_price, vat_rate')
-        .eq('invoice_id', invoiceId);
-
-      const blanks = new Set<string>((invLines || [])
-        .filter(l => (Number(l.unit_price) === 0) && (!l.quantity || Number(l.quantity) === 0) && String(l.description || '').toLowerCase().includes('tol'))
-        .map(l => l.id));
-
-      // Helper voor land-label in factuurregel
-      const countryLabel = (c: string) => {
-        const s = (c || '').toLowerCase();
-        if (s.startsWith('de')) return 'Duitsland';
-        if (s.startsWith('be')) return 'België'
-        if (s.startsWith('fr')) return 'Frankrijk';
-        if (s.startsWith('lu')) return 'Luxemburg';
-        return c;
-      };
-
-      const updates: Array<{ id: string; payload: any }> = [];
-      const inserts: any[] = [];
-      const applied: string[] = [];
-
-    const groups = Array.from(byKey.values()).sort((a,b) => a.firstDate.localeCompare(b.firstDate));
-
-    // Kenteken-check: factuur mag alleen tol krijgen van hetzelfde kenteken
-    const invoicePlate = parseInvoicePlate(inv?.reference);
-    if (invoicePlate) {
-      const mismatches = groups.filter(g => (g.plate || '').toUpperCase() !== invoicePlate);
-      if (mismatches.length > 0) {
-        toast({ variant: 'destructive', title: 'Kenteken komt niet overeen', description: `Factuur: ${invoicePlate}. Geselecteerde groep kenteken: ${(mismatches[0].plate || '').toUpperCase()}. Koppelen afgebroken.` });
-        return;
-      }
+    const groupKeys = Array.from(new Set(selected.map((entry) => {
+      const meta = (entryMetaCache.get(entry.id) || buildEntryGroupMeta(entry));
+      // cache meta so repeated lookups reuse it
+      entryMetaCache.set(entry.id, meta);
+      return meta.key;
+    })));
+    if (groupKeys.length === 0) {
+      toast({ variant: 'destructive', title: 'Geen groepen gevonden in selectie' });
+      return;
     }
-      // Check for duplicates: prevent adding the same toll group (week/day/plate/country/vat) twice
-      const duplicateWarnings: string[] = [];
-      const processedGroupKeys = new Set<string>(); // Track groups already processed in this operation
-      
-      // Fetch invoice labels for warnings
-      const invoiceIdSet = new Set<string>();
-      entries.forEach(e => {
-        if (e.appliedInvoiceId) invoiceIdSet.add(e.appliedInvoiceId);
+
+    let successCount = 0;
+    const missingTargets: string[] = [];
+    for (const key of groupKeys) {
+      const items = itemsByGroup.get(key) || [];
+      if (items.length === 0) continue;
+      const sample = items[0];
+      const d = new Date(sample.usageDate);
+      const weekId = sample.weekId || `${getYear(d)}-${getISOWeek(d)}`;
+      const invoiceId = selectedInvoiceId || findInvoiceIdForGroup(weekId, sample.licensePlate);
+      if (!invoiceId) {
+        missingTargets.push(`${weekId} (${sample.licensePlate})`);
+        continue;
+      }
+      const ok = await applyGroupToInvoice(key, invoiceId, { silentSuccess: groupKeys.length > 1 });
+      if (ok) successCount += 1;
+    }
+
+    if (missingTargets.length > 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Geen factuur gevonden',
+        description: `Geen conceptfactuur gevonden voor ${missingTargets.join(', ')}`
       });
-      const invoiceIdsArray = Array.from(invoiceIdSet);
-      let invoiceLabelMap = { ...invoiceMap };
-      if (invoiceIdsArray.length > 0) {
-        const { data: invoiceData } = await supabase
-          .from('invoices')
-          .select('id, invoice_number, reference')
-          .in('id', invoiceIdsArray);
-        if (invoiceData) {
-          invoiceData.forEach((inv: any) => {
-            const label = inv.invoice_number || inv.reference || inv.id;
-            invoiceLabelMap[inv.id] = label;
-          });
-        }
-      }
-      
-      // Check if toll entries for this group are already applied to ANY invoice
-      for (const g of groups) {
-        const groupKey = `${g.weekId}|${g.day}|${g.plate}|${g.country}|${g.vat}`;
-        
-        // Check if any entries with this group key are already applied to an invoice
-        const alreadyAppliedEntries = entries.filter(e => {
-          if (e.appliedInvoiceId) {
-            const d = new Date(e.usageDate);
-            const w = e.weekId || `${getYear(d)}-${getISOWeek(d)}`;
-            const day = format(d, 'EEEE', { locale: nl });
-            const entryGroupKey = `${w}|${day}|${e.licensePlate}|${e.country}|${e.vatRate}`;
-            return entryGroupKey === groupKey;
-          }
-          return false;
-        });
-        
-        if (alreadyAppliedEntries.length > 0) {
-          const invoiceIds = Array.from(new Set(alreadyAppliedEntries.map(e => e.appliedInvoiceId).filter(Boolean) as string[]));
-          const invoiceLabels = invoiceIds.map(id => invoiceLabelMap[id] || invoices.find(i => i.id === id)?.invoice_number || invoices.find(i => i.id === id)?.reference || id).join(', ');
-          duplicateWarnings.push(`Week ${g.weekId}, ${g.day}, ${g.country} (${g.vat}%) - al toegevoegd aan: ${invoiceLabels}`);
-        }
-        
-        // Check if this group is already in the invoice lines
-        const firstId = g.itemIds[0];
-        const entry = selected.find(e => e.id === firstId)!;
-        const d = new Date(entry.usageDate);
-        const dd = String(d.getDate()).padStart(2,'0');
-        const mm = String(d.getMonth()+1).padStart(2,'0');
-        const yyyy = d.getFullYear();
-        const dateLabel = `${dd}-${mm}-${yyyy}`;
-        const label = countryLabel(g.country);
-        const dayNameMap: any = { 'maandag':'Maandag','dinsdag':'Dinsdag','woensdag':'Woensdag','donderdag':'Donderdag','vrijdag':'Vrijdag','zaterdag':'Zaterdag','zondag':'Zondag' };
-        const dayLabel = dayNameMap[g.day.toLowerCase()] || g.day;
-        const lc = ('Tol ' + label).toLowerCase();
-        
-        // Check for exact match: same week, day, country, and VAT rate
-        const exactMatch = (invLines || []).find((l: any) => {
-          const desc = String(l.description || '').toLowerCase();
-          const hasDay = desc.includes(dayLabel.toLowerCase());
-          const hasCountry = desc.includes(lc);
-          const hasWeek = desc.includes(g.weekId.toLowerCase()) || desc.includes(dateLabel.toLowerCase());
-          const hasVat = Number(l.vat_rate) === g.vat;
-          const hasAmount = Number(l.unit_price) > 0 || Number(l.quantity) > 0;
-          return hasDay && hasCountry && hasWeek && hasVat && hasAmount;
-        });
-        
-        if (exactMatch) {
-          duplicateWarnings.push(`Week ${g.weekId}, ${g.day}, ${g.country} (${g.vat}%) - al aanwezig in deze factuur`);
-          // Skip adding this group
-          continue;
-        }
-        
-        // Check if this group key was already processed in this batch
-        if (processedGroupKeys.has(groupKey)) {
-          duplicateWarnings.push(`Week ${g.weekId}, ${g.day}, ${g.country} (${g.vat}%) - dubbel in selectie`);
-          continue;
-        }
-        processedGroupKeys.add(groupKey);
-      }
-      
-      // Show warnings if duplicates found
-      if (duplicateWarnings.length > 0) {
-        toast({
-          variant: "destructive",
-          title: "Dubbele tol regels gedetecteerd",
-          description: `${duplicateWarnings.length} groep(en) overgeslagen:\n${duplicateWarnings.slice(0, 3).join('\n')}${duplicateWarnings.length > 3 ? `\n...en ${duplicateWarnings.length - 3} meer` : ''}`,
-          duration: 10000,
-        });
-      }
-      
-      // Filter out duplicate groups before processing
-      const uniqueGroups = groups.filter((g, idx) => {
-        const groupKey = `${g.weekId}|${g.day}|${g.plate}|${g.country}|${g.vat}`;
-        
-        // Skip if already applied to another invoice
-        const alreadyAppliedEntries = entries.filter(e => {
-          if (e.appliedInvoiceId) {
-            const d = new Date(e.usageDate);
-            const w = e.weekId || `${getYear(d)}-${getISOWeek(d)}`;
-            const day = format(d, 'EEEE', { locale: nl });
-            const entryGroupKey = `${w}|${day}|${e.licensePlate}|${e.country}|${e.vatRate}`;
-            return entryGroupKey === groupKey;
-          }
-          return false;
-        });
-        if (alreadyAppliedEntries.length > 0) return false;
-        
-        // Skip if already in invoice
-        const firstId = g.itemIds[0];
-        const entry = selected.find(e => e.id === firstId)!;
-        const d = new Date(entry.usageDate);
-        const dd = String(d.getDate()).padStart(2,'0');
-        const mm = String(d.getMonth()+1).padStart(2,'0');
-        const yyyy = d.getFullYear();
-        const dateLabel = `${dd}-${mm}-${yyyy}`;
-        const label = countryLabel(g.country);
-        const dayNameMap: any = { 'maandag':'Maandag','dinsdag':'Dinsdag','woensdag':'Woensdag','donderdag':'Donderdag','vrijdag':'Vrijdag','zaterdag':'Zaterdag','zondag':'Zondag' };
-        const dayLabel = dayNameMap[g.day.toLowerCase()] || g.day;
-        const lc = ('Tol ' + label).toLowerCase();
-        
-        const exactMatch = (invLines || []).find((l: any) => {
-          const desc = String(l.description || '').toLowerCase();
-          const hasDay = desc.includes(dayLabel.toLowerCase());
-          const hasCountry = desc.includes(lc);
-          const hasWeek = desc.includes(g.weekId.toLowerCase()) || desc.includes(dateLabel.toLowerCase());
-          const hasVat = Number(l.vat_rate) === g.vat;
-          const hasAmount = Number(l.unit_price) > 0 || Number(l.quantity) > 0;
-          return hasDay && hasCountry && hasWeek && hasVat && hasAmount;
-        });
-        if (exactMatch) return false;
-        
-        // Skip if duplicate in batch
-        const isFirstOccurrence = groups.findIndex(g2 => {
-          const key2 = `${g2.weekId}|${g2.day}|${g2.plate}|${g2.country}|${g2.vat}`;
-          return key2 === groupKey;
-        }) === idx;
-        
-        return isFirstOccurrence;
-      });
-      
-      for (const g of uniqueGroups) {
-        // Vind voorbeeld-regel voor datum
-        const firstId = g.itemIds[0];
-        const entry = selected.find(e => e.id === firstId)!;
-        const d = new Date(entry.usageDate);
-        const dd = String(d.getDate()).padStart(2,'0');
-        const mm = String(d.getMonth()+1).padStart(2,'0');
-        const yyyy = d.getFullYear();
-        const dateLabel = `${dd}-${mm}-${yyyy}`;
-        const label = countryLabel(g.country);
-        const dayNameMap: any = { 'maandag':'Maandag','dinsdag':'Dinsdag','woensdag':'Woensdag','donderdag':'Donderdag','vrijdag':'Vrijdag','zaterdag':'Zaterdag','zondag':'Zondag' };
-        const dayLabel = dayNameMap[g.day.toLowerCase()] || g.day;
-        const lc = ('Tol ' + label).toLowerCase();
-        const tryMatchAny = (pred: (l:any)=>boolean) => (invLines || []).find(pred) as any;
-        const tryMatchBlank = (pred: (l:any)=>boolean) => (invLines || []).find(l => blanks.has(l.id) && pred(l)) as any;
-        const isDescDateAndTol = (l:any) => { const desc = String(l.description||'').toLowerCase(); return desc.includes(dateLabel.toLowerCase()) && desc.includes('tol'); };
-        const isDescDayAndLabel = (l:any) => String(l.description||'').toLowerCase().includes(dayLabel.toLowerCase()) && String(l.description||'').toLowerCase().includes(lc);
-        const isDescLabel = (l:any) => String(l.description||'').toLowerCase().includes(lc);
-        // 1) Prefer bestaande nietâ€'lege regel (voorkomt duplicaten)
-        let lookFor = tryMatchAny(l => (Number(l.unit_price) > 0 || Number(l.quantity) > 0) && isDescDateAndTol(l));
-        if (!lookFor) lookFor = tryMatchAny(l => (Number(l.unit_price) > 0 || Number(l.quantity) > 0) && isDescDayAndLabel(l));
-        if (!lookFor) lookFor = tryMatchAny(l => (Number(l.unit_price) > 0 || Number(l.quantity) > 0) && isDescLabel(l));
-        // 2) Anders: probeer witregel
-        if (!lookFor) lookFor = tryMatchBlank(isDescDateAndTol);
-        if (!lookFor) lookFor = tryMatchBlank(isDescDayAndLabel);
-        if (!lookFor) lookFor = tryMatchBlank(isDescLabel);
+    }
 
-        const amount = Number(g.total.toFixed(2));
-        if (lookFor) {
-          updates.push({ id: lookFor.id, payload: { quantity: 1, unit_price: amount, vat_rate: g.vat, total: amount } });
-          blanks.delete(lookFor.id);
-        } else {
-          inserts.push({ invoice_id: invoiceId, quantity: 1, description: `${g.day} ${dateLabel}\nTol ${label}`, unit_price: amount, vat_rate: g.vat, total: amount });
-        }
-        applied.push(...g.itemIds);
+    if (successCount > 0) {
+      if (groupKeys.length > 1) {
+        toast({ title: 'Tol toegevoegd', description: `${successCount} groep(en) gekoppeld aan facturen` });
       }
-      
-      // If no groups to process after filtering duplicates
-      if (applied.length === 0) {
-        toast({
-          variant: "destructive",
-          title: "Geen regels toegevoegd",
-          description: "Alle geselecteerde regels zijn al toegevoegd of dubbel.",
-        });
-        return;
-      }
-
-      // Uitvoeren updates/inserts
-      for (const u of updates) {
-        const { error } = await supabase.from('invoice_lines').update(u.payload).eq('id', u.id);
-        if (error) throw error;
-      }
-      if (inserts.length > 0) {
-        const { error } = await supabase.from('invoice_lines').insert(inserts);
-        if (error) throw error;
-      }
-
-      const { error: upErr } = await supabase
-        .from('toll_entries')
-        .update({ applied_invoice_id: invoiceId, applied_at: new Date().toISOString() })
-        .in('id', applied);
-      if (upErr) throw upErr;
-
-      // Refresh entries from database to ensure consistency
-      await fetchEntries();
-      setInvoiceMap(prev => ({
-        ...prev,
-        [invoiceId]: prev[invoiceId]
-          || invoices.find(i => i.id === invoiceId)?.invoice_number
-          || (invoices.find(i => i.id === invoiceId) as any)?.reference
-          || invoiceId
-      }));
-      toast({ title: 'Toegevoegd aan factuur', description: `${updates.length + inserts.length} regel(s) verwerkt` });
       setSelectedIds(new Set());
-    } catch (e: any) {
-      console.error('[Tol] apply to invoice error', e);
-      toast({ variant: 'destructive', title: 'Toevoegen mislukt', description: e?.message || String(e) });
     }
   };
-
-  // Reset filters back to initial state
-  const handleResetFilters = () => {
-    setFilterWeek("");
-    setFilterPlate("");
-    setSelectedInvoiceId("");
-    setSelectedIds(new Set());
-  };
-
-  const handleApplyGroupToInvoice = async (groupKey: string) => {
-    const invoiceId = selectedInvoiceId;
-    if (!invoiceId) { toast({ variant: 'destructive', title: 'Kies eerst een factuur' }); return; }
+  const applyGroupToInvoice = async (groupKey: string, invoiceId: string, options?: { silentSuccess?: boolean }) => {
+    if (!invoiceId) {
+      toast({ variant: 'destructive', title: 'Kies eerst een factuur' });
+      return false;
+    }
     const items = itemsByGroup.get(groupKey) || [];
-    const pending = items.filter(e => !e.appliedInvoiceId);
-    if (pending.length === 0) { toast({ title: 'Geen nieuwe regels in deze groep' }); return; }
+    const pending = items.filter((e) => !e.appliedInvoiceId);
+    if (pending.length === 0) {
+      toast({ title: 'Geen nieuwe regels in deze groep' });
+      return false;
+    }
     const sample = pending[0];
+    const meta = buildEntryGroupMeta(sample);
     const d = new Date(sample.usageDate);
     const w = sample.weekId || `${getYear(d)}-${getISOWeek(d)}`;
     const day = format(d, 'EEEE', { locale: nl });
-    const plate = sample.licensePlate; const country = sample.country; const vat = sample.vatRate;
+    const plate = sample.licensePlate;
+    const country = sample.country;
+    const vat = sample.vatRate;
     const total = pending.reduce((acc, e) => acc + e.amount, 0);
+
     try {
-      // Kenteken-check: factuur mag alleen tol krijgen van hetzelfde kenteken
-      const inv = invoices.find(i => i.id === invoiceId) as any;
+      const inv = invoices.find((i) => i.id === invoiceId) as any;
       const parseInvoicePlate = (invRef?: string) => {
         const m = String(invRef || '').match(/\(([A-Za-z0-9\-]+)\)\s*$/);
         return m ? m[1].toUpperCase() : '';
       };
       const invoicePlate = parseInvoicePlate(inv?.reference);
       if (invoicePlate && invoicePlate !== String(plate || '').toUpperCase()) {
-        toast({ variant: 'destructive', title: 'Kenteken komt niet overeen', description: `Factuur: ${invoicePlate}. Geselecteerde groep kenteken: ${String(plate || '').toUpperCase()}. Koppelen afgebroken.` });
-        return;
+        toast({
+          variant: 'destructive',
+          title: 'Kenteken komt niet overeen',
+          description: `Factuur: ${invoicePlate}. Geselecteerde groep kenteken: ${String(plate || '').toUpperCase()}. Koppelen afgebroken.`,
+        });
+        return false;
       }
-      // Bestaande witregels laden
+
       const { data: invLines } = await supabase
         .from('invoice_lines')
         .select('id, description, quantity, unit_price, vat_rate')
         .eq('invoice_id', invoiceId);
-      const blanks = (invLines || []).filter(l => (Number(l.unit_price) === 0) && (!l.quantity || Number(l.quantity) === 0) && String(l.description||'').toLowerCase().includes('tol')) as any[];
+      const blanks = (invLines || []).filter(
+        (line) => Number(line.unit_price) === 0 && (!line.quantity || Number(line.quantity) === 0) && String(line.description || '').toLowerCase().includes('tol')
+      ) as any[];
 
       const lower = country.toLowerCase();
-            const label = lower.startsWith('de') ? 'Duitsland' : (lower.startsWith('be') ? 'België' : country);
-      const dd = String(d.getDate()).padStart(2,'0');
-      const mm = String(d.getMonth()+1).padStart(2,'0');
+      const label = lower.startsWith('de') ? 'Duitsland' : lower.startsWith('be') ? 'Belgie' : country;
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
       const yyyy = d.getFullYear();
       const dateLabel = `${dd}-${mm}-${yyyy}`;
 
-      // Check if this toll group is already applied to ANY invoice
-      const groupKey = `${w}|${day}|${plate}|${country}|${vat}`;
-      const alreadyAppliedEntries = entries.filter(e => {
-        if (e.appliedInvoiceId) {
-          const d = new Date(e.usageDate);
-          const w2 = e.weekId || `${getYear(d)}-${getISOWeek(d)}`;
-          const day2 = format(d, 'EEEE', { locale: nl });
-          const entryGroupKey = `${w2}|${day2}|${e.licensePlate}|${e.country}|${e.vatRate}`;
-          return entryGroupKey === groupKey;
-        }
-        return false;
-      });
-      
+      const alreadyAppliedEntries = entries.filter(
+        (entry) => entry.appliedInvoiceId && buildEntryGroupMeta(entry).key === meta.key
+      );
       if (alreadyAppliedEntries.length > 0) {
-        const invoiceIds = Array.from(new Set(alreadyAppliedEntries.map(e => e.appliedInvoiceId).filter(Boolean)));
-        const invoiceLabels = invoiceIds.map(id => invoiceMap[id] || id).join(', ');
+        const invoiceIds = Array.from(new Set(alreadyAppliedEntries.map((e) => e.appliedInvoiceId).filter((id): id is string => Boolean(id))));
+        const invoiceLabels = invoiceIds.map((id) => invoiceMap[id] || id).join(', ');
         toast({
-          variant: "destructive",
-          title: "Tol al toegevoegd",
+          variant: 'destructive',
+          title: 'Tol al toegevoegd',
           description: `Week ${w}, ${day}, ${country} (${vat}%) is al toegevoegd aan: ${invoiceLabels}`,
         });
-        return;
+        return false;
       }
-      
-      // Check if exact match exists in current invoice
-      const exactMatch = (invLines || []).find((l: any) => {
-        const desc = String(l.description || '').toLowerCase();
+
+      const exactMatch = (invLines || []).find((line: any) => {
+        const desc = String(line.description || '').toLowerCase();
         const hasDay = desc.includes(day.toLowerCase());
         const hasCountry = desc.includes(label.toLowerCase());
         const hasWeek = desc.includes(w.toLowerCase()) || desc.includes(dateLabel.toLowerCase());
-        const hasVat = Number(l.vat_rate) === vat;
-        const hasAmount = Number(l.unit_price) > 0 || Number(l.quantity) > 0;
+        const hasVat = Number(line.vat_rate) === vat;
+        const hasAmount = Number(line.unit_price) > 0 || Number(line.quantity) > 0;
         return hasDay && hasCountry && hasWeek && hasVat && hasAmount;
       });
-      
       if (exactMatch) {
         toast({
-          variant: "destructive",
-          title: "Tol al in factuur",
+          variant: 'destructive',
+          title: 'Tol al in factuur',
           description: `Week ${w}, ${day}, ${country} (${vat}%) staat al in deze factuur.`,
         });
-        return;
+        return false;
       }
-      
-      const match = blanks.find(l => {
-        const desc = String(l.description||'').toLowerCase();
+
+      const match = blanks.find((line) => {
+        const desc = String(line.description || '').toLowerCase();
         return desc.includes(dateLabel.toLowerCase()) && desc.includes('tol');
       });
       const amount = Number(total.toFixed(2));
       if (match) {
-        const { error } = await supabase.from('invoice_lines').update({ quantity: 1, unit_price: amount, vat_rate: vat, total: amount }).eq('id', match.id);
+        const { error } = await supabase
+          .from('invoice_lines')
+          .update({ quantity: 1, unit_price: amount, vat_rate: vat, total: amount })
+          .eq('id', match.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('invoice_lines').insert([{ invoice_id: invoiceId, quantity: 1, description: `${day} ${dateLabel}\nTol ${label}`, unit_price: amount, vat_rate: vat, total: amount }]);
+        const { error } = await supabase
+          .from('invoice_lines')
+          .insert([{ invoice_id: invoiceId, quantity: 1, description: `${day} ${dateLabel}\nTol ${label}`, unit_price: amount, vat_rate: vat, total: amount }]);
         if (error) throw error;
       }
 
       const { error: upErr } = await supabase
         .from('toll_entries')
         .update({ applied_invoice_id: invoiceId, applied_at: new Date().toISOString() })
-        .in('id', pending.map(p => p.id));
+        .in('id', pending.map((p) => p.id));
       if (upErr) throw upErr;
-      
-      // Refresh entries from database to ensure consistency
+
       await fetchEntries();
-      setInvoiceMap(prev => ({
+      setInvoiceMap((prev) => ({
         ...prev,
-        [invoiceId]: prev[invoiceId]
-          || invoices.find(i => i.id === invoiceId)?.invoice_number
-          || (invoices.find(i => i.id === invoiceId) as any)?.reference
-          || invoiceId
+        [invoiceId]:
+          prev[invoiceId] ||
+          formatInvoiceReference((invoices.find((i) => i.id === invoiceId) as any)?.reference) ||
+          invoiceId,
       }));
-      toast({ title: 'Groep toegevoegd', description: `Factuur bijgewerkt (${vat}%)` });
+      if (!options?.silentSuccess) {
+        toast({ title: 'Groep toegevoegd', description: `Factuur bijgewerkt (${vat}%)` });
+      }
+      return true;
     } catch (e: any) {
       console.error('[Tol] apply group error', e);
       toast({ variant: 'destructive', title: 'Toevoegen mislukt', description: e?.message || String(e) });
+      return false;
     }
+  };
+
+  const handleApplyGroupToInvoice = async (groupKey: string) => {
+    const items = itemsByGroup.get(groupKey) || [];
+    if (items.length === 0) return;
+    const sample = items[0];
+    const d = new Date(sample.usageDate);
+    const weekId = sample.weekId || `${getYear(d)}-${getISOWeek(d)}`;
+    const invoiceId = selectedInvoiceId || findInvoiceIdForGroup(weekId, sample.licensePlate);
+    if (!invoiceId) {
+      toast({
+        variant: 'destructive',
+        title: 'Geen conceptfactuur gevonden',
+        description: `Maak of selecteer een factuur voor week ${weekId} (${sample.licensePlate}).`,
+      });
+      return;
+    }
+    await applyGroupToInvoice(groupKey, invoiceId);
+  };
+
+  const handleResetFilters = () => {
+    setFilterWeek("");
+    setFilterPlate("");
+    setSelectedInvoiceId("");
+    setSelectedIds(new Set());
   };
 
   const handleDeleteSelected = async () => {
@@ -1270,7 +1282,7 @@ export default function TollOverviewPage() {
       if (!active || error) return;
       const m: Record<string, string> = {};
       (data || []).forEach((r: any) => {
-        const label = r.invoice_number || r.reference || r.id;
+        const label = formatInvoiceReference(r.reference) || r.id;
         m[r.id] = label;
       });
       setInvoiceMap(m);
@@ -1290,41 +1302,96 @@ export default function TollOverviewPage() {
             <h3 className="font-semibold">Excel upload</h3>
             <p className="text-sm text-muted-foreground">Verwachte kolommen: Land, Kenteken, Datum gebruik, Bedrag ex btw, BTW tarief.</p>
             <Input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => e.target.files && e.target.files[0] && handleFile(e.target.files[0])} />
-            {parsed.length > 0 && (
+            {columnOptions.length > 0 && (
+              <div className="space-y-4 rounded-md border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium">Kolommen koppelen</p>
+                    {selectedSheetName && <p className="text-xs text-muted-foreground">Sheet: {selectedSheetName}</p>}
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={handleAutoDetectMapping}>
+                    Kolommen autodetect
+                  </Button>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {mappingFieldMeta.map(({ key, label, hint, required }) => (
+                    <div key={key} className="space-y-1.5">
+                      <Label className="text-sm font-medium">
+                        {label}
+                        {required && <span className="text-destructive"> *</span>}
+                      </Label>
+                      <Select value={columnMapping[key] ?? SELECT_NONE_VALUE} onValueChange={(v) => handleMappingChange(key, v)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Kies kolom" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={SELECT_NONE_VALUE}>Geen</SelectItem>
+                          {columnOptions.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">{hint}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {rawSheetRows.length > 0 && (
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm">Voorbeeld uit: {fileName} — {parsed.length} regels klaar voor import</div>
-                  <Button onClick={handleImport} disabled={isImporting}>{isImporting ? "Bezig…" : "Importeer"}</Button>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm">
+                    {parsed.length > 0 ? (
+                      <span>
+                        Voorbeeld uit: {fileName}
+                        {selectedSheetName ? " (" + selectedSheetName + ")" : ""} - {parsed.length} regels klaar voor import
+                      </span>
+                    ) : (
+                      "Geen voorbeeld beschikbaar. Selecteer de verplichte kolommen voor datum, kenteken, land en bedrag."
+                    )}
+                  </div>
+                  <Button onClick={handleImport} disabled={isImporting || parsed.length === 0}>
+                    {isImporting ? "Bezig..." : "Importeer"}
+                  </Button>
                 </div>
-                <div className="border rounded-md overflow-auto max-h-[320px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead></TableHead>
-                                          <TableHead>Datum</TableHead>
-                        <TableHead className="w-24">Dag</TableHead>
-                        <TableHead className="w-28">Kenteken</TableHead>
-                        <TableHead className="w-16">Land</TableHead>
-                        <TableHead>Bedrag (ex)</TableHead>
-                        <TableHead className="w-16 text-right">BTW %</TableHead>
-                        <TableHead className="w-24">Week</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {parsed.slice(0, 20).map((r, idx) => (
-                        <TableRow key={idx}>
-                          <TableCell>{format(new Date(r.usageDate), "dd-MM-yyyy")}</TableCell>
-                          <TableCell>{format(new Date(r.usageDate), "EEEE", { locale: nl })}</TableCell>
-                          <TableCell>{r.licensePlate}</TableCell>
-                          <TableCell>{r.country}</TableCell>
-                          <TableCell>{formatCurrency(r.amount)}</TableCell>
-                          <TableCell>{r.vatRate}%</TableCell>
-                          <TableCell>{r.weekId}</TableCell>
+                {parsed.length > 0 ? (
+                  <div className="border rounded-md overflow-auto max-h-[320px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Datum</TableHead>
+                          <TableHead className="w-24">Tijdstip</TableHead>
+                          <TableHead className="w-24">Dag</TableHead>
+                          <TableHead className="w-28">Kenteken</TableHead>
+                          <TableHead className="w-16">Land</TableHead>
+                          <TableHead>Bedrag (ex)</TableHead>
+                          <TableHead className="w-16 text-right">BTW %</TableHead>
+                          <TableHead className="w-24">Week</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {parsed.slice(0, 20).map((r, idx) => (
+                          <TableRow key={[r.usageDate, r.licensePlate, idx].join("-")}>
+                            <TableCell>{format(new Date(r.usageDate), "dd-MM-yyyy")}</TableCell>
+                            <TableCell>{r.usageTime ?? "-"}</TableCell>
+                            <TableCell>{format(new Date(r.usageDate), "EEEE", { locale: nl })}</TableCell>
+                            <TableCell>{r.licensePlate}</TableCell>
+                            <TableCell>{r.country}</TableCell>
+                            <TableCell>{formatCurrency(r.amount)}</TableCell>
+                            <TableCell>{r.vatRate}%</TableCell>
+                            <TableCell>{r.weekId}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                    Selecteer minimaal datum, kenteken, land en bedrag om de gegevens te kunnen importeren.
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1335,10 +1402,10 @@ export default function TollOverviewPage() {
               {/* Use a non-empty sentinel for "all" to avoid Radix empty-value restriction */}
               <div className="w-[200px]">
                 <Select value={filterWeek || "__ALL__"} onValueChange={(v) => setFilterWeek(v === "__ALL__" ? "" : v)}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Week filter" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper">
                     <SelectItem key="all-weeks" value="__ALL__">Alle weken</SelectItem>
                     {recentWeeks.map((w) => (
                       <SelectItem key={w} value={w}>{w}</SelectItem>
@@ -1348,10 +1415,10 @@ export default function TollOverviewPage() {
               </div>
               <div className="w-[200px]">
                 <Select value={filterPlate || "__ALL__"} onValueChange={(v) => setFilterPlate(v === "__ALL__" ? "" : v)}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Kenteken" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper">
                     <SelectItem key="all-plates" value="__ALL__">Alle kentekens</SelectItem>
                     {vehicles.map((v) => (
                       <SelectItem key={v.id} value={v.licensePlate}>{v.licensePlate}</SelectItem>
@@ -1361,15 +1428,12 @@ export default function TollOverviewPage() {
               </div>
               <div className="w-[280px]">
                 <Select value={selectedInvoiceId} onValueChange={setSelectedInvoiceId}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Kies conceptfactuur" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent position="popper">
                     {invoices.map((inv) => {
-                      const ref = inv.reference || '';
-                      const dt = inv.created_at ? new Date(inv.created_at) : null;
-                      const dateStr = dt ? dt.toLocaleDateString('nl-NL') : '';
-                      const label = inv.invoice_number || (ref ? ref : `${dateStr} (${inv.id.slice(0, 8)})`);
+                      const label = formatInvoiceReference(inv.reference) || `${inv.id.slice(0, 8)}`;
                       return (
                         <SelectItem key={inv.id} value={inv.id}>{label}</SelectItem>
                       );
@@ -1381,7 +1445,7 @@ export default function TollOverviewPage() {
               <div className="flex gap-2">
                 <Button
                   onClick={handleApplySelectedToInvoice}
-                  disabled={!selectedInvoiceId || selectedIds.size === 0}
+                  disabled={selectedIds.size === 0}
                 >
                   Aan factuur toevoegen
                 </Button>
@@ -1417,17 +1481,18 @@ export default function TollOverviewPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-6">
+                      <TableHead className="w-8 p-2"></TableHead>
+                      <TableHead className="w-6 p-2">
                         <Checkbox checked={(pendingAllSelected ? true : (pendingSomeSelected ? 'indeterminate' : false)) as any} onCheckedChange={(v) => handleSelectAllPending(v as any)} />
                       </TableHead>
-                      <TableHead className="w-24">Week</TableHead>
-                      <TableHead className="w-24">Dag</TableHead>
-                      <TableHead className="w-28">Kenteken</TableHead>
-                      <TableHead className="w-16">Land</TableHead>
-                      <TableHead className="w-16 text-right">BTW %</TableHead>
-                      <TableHead className="w-48">Factuur</TableHead>
-                      <TableHead className="w-28 text-right">Totaal (ex)</TableHead>
-                      <TableHead className="w-16 text-right">Aantal</TableHead>
+                      <TableHead className="w-24 p-2">Week</TableHead>
+                      <TableHead className="w-24 p-2">Dag</TableHead>
+                      <TableHead className="w-28 p-2">Kenteken</TableHead>
+                      <TableHead className="w-16 p-2">Land</TableHead>
+                      <TableHead className="w-16 p-2 text-right">BTW %</TableHead>
+                      <TableHead className="w-48 p-2">Factuur</TableHead>
+                      <TableHead className="w-28 p-2 text-right">Totaal (ex)</TableHead>
+                      <TableHead className="w-16 p-2 text-right">Aantal</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1442,20 +1507,48 @@ export default function TollOverviewPage() {
                         const allInGroup = items.length > 0 && items.every(i => selectedIds.has(i.id));
                         const anyInGroup = items.some(i => selectedIds.has(i.id));
                         const checked: any = allInGroup ? true : (anyInGroup ? 'indeterminate' : false);
+                        const isExpanded = expanded.has(groupKey);
+                        const sortedItems = [...items].sort((a, b) => (a.usageDate.localeCompare(b.usageDate) || (a.usageTime || '').localeCompare(b.usageTime || '')));
                         return (
+                        <Fragment key={`pending-group-${groupKey}`}>
                         <TableRow key={`${g.weekId}-${g.day}-${g.licensePlate}-${g.country}-${g.vatRate}-${idx}`}>
-                          <TableCell>
+                          <TableCell className="w-8 p-2">
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleGroup(groupKey)} aria-label="Toon details">
+                              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </Button>
+                          </TableCell>
+                          <TableCell className="w-6 p-2">
                             <Checkbox checked={checked} onCheckedChange={(v) => toggleGroupSelected(groupKey, v as any)} />
                           </TableCell>
-                          <TableCell className="w-24">{g.weekId}</TableCell>
-                          <TableCell className="w-24">{g.day}</TableCell>
-                          <TableCell className="w-28">{g.licensePlate}</TableCell>
-                          <TableCell className="w-16">{g.country}</TableCell>
-                          <TableCell className="w-16 text-right">{g.vatRate}%</TableCell>
-                          <TableCell className="w-48">-</TableCell>
-                          <TableCell className="w-28 text-right">{formatCurrency(g.total)}</TableCell>
-                          <TableCell className="w-16 text-right">{g.count}</TableCell>
+                          <TableCell className="w-24 p-2">{g.weekId}</TableCell>
+                          <TableCell className="w-24 p-2">{g.day}</TableCell>
+                          <TableCell className="w-28 p-2">{g.licensePlate}</TableCell>
+                          <TableCell className="w-16 p-2">{g.country}</TableCell>
+                          <TableCell className="w-16 p-2 text-right">{g.vatRate}%</TableCell>
+                          <TableCell className="w-48 p-2">-</TableCell>
+                          <TableCell className="w-28 p-2 text-right">{formatCurrency(g.total)}</TableCell>
+                          <TableCell className="w-16 p-2 text-right">{g.count}</TableCell>
                         </TableRow>
+                        {isExpanded && (
+                          <TableRow key={`${groupKey}-details`}>
+                            <TableCell />
+                            <TableCell colSpan={9} className="bg-muted/40 p-3">
+                              <div className="space-y-2 text-sm">
+                                {sortedItems.map((item) => (
+                                  <div key={item.id} className="grid grid-cols-[100px_80px_112px_64px_112px_1fr] gap-x-4 items-center">
+                                    <span className="font-medium">{format(new Date(item.usageDate), "dd-MM-yyyy")}</span>
+                                    <span className="text-right">{item.usageTime || "-"}</span>
+                                    <span>{item.licensePlate}</span>
+                                    <span>{item.country}</span>
+                                    <span className="text-right">{formatCurrency(item.amount)} ex</span>
+                                    <span className="text-muted-foreground truncate">{item.source || "-"}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        </Fragment>
                         );
                       })
                     )}
@@ -1469,17 +1562,18 @@ export default function TollOverviewPage() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-6">
+                      <TableHead className="w-8 p-2"></TableHead>
+                      <TableHead className="w-6 p-2">
                         <Checkbox checked={(appliedAllSelected ? true : (appliedSomeSelected ? 'indeterminate' : false)) as any} onCheckedChange={(v) => handleSelectAllApplied(v as any)} />
                       </TableHead>
-                      <TableHead className="w-24">Week</TableHead>
-                      <TableHead className="w-24">Dag</TableHead>
-                      <TableHead className="w-28">Kenteken</TableHead>
-                      <TableHead className="w-16">Land</TableHead>
-                      <TableHead className="w-16 text-right">BTW %</TableHead>
-                      <TableHead className="w-48">Factuur</TableHead>
-                      <TableHead className="w-28 text-right">Totaal (ex)</TableHead>
-                      <TableHead className="w-16 text-right">Aantal</TableHead>
+                      <TableHead className="w-24 p-2">Week</TableHead>
+                      <TableHead className="w-24 p-2">Dag</TableHead>
+                      <TableHead className="w-28 p-2">Kenteken</TableHead>
+                      <TableHead className="w-16 p-2">Land</TableHead>
+                      <TableHead className="w-16 p-2 text-right">BTW %</TableHead>
+                      <TableHead className="w-48 p-2">Factuur</TableHead>
+                      <TableHead className="w-28 p-2 text-right">Totaal (ex)</TableHead>
+                      <TableHead className="w-16 p-2 text-right">Aantal</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1495,20 +1589,51 @@ export default function TollOverviewPage() {
                         const anyInGroup = items.some(i => selectedIds.has(i.id));
                         const checked: any = allInGroup ? true : (anyInGroup ? 'indeterminate' : false);
                         const labels = (g as any).invoiceIds?.map((id: string) => invoiceMap[id]).filter(Boolean) as string[];
+                        const isExpanded = expanded.has(groupKey);
+                        const sortedItems = [...items].sort((a, b) => (a.usageDate.localeCompare(b.usageDate) || (a.usageTime || '').localeCompare(b.usageTime || '')));
                         return (
+                        <Fragment key={`applied-group-${groupKey}`}>
                         <TableRow key={`applied-${g.weekId}-${g.day}-${g.licensePlate}-${g.country}-${g.vatRate}-${idx}`}>
-                          <TableCell>
+                          <TableCell className="w-8 p-2">
+                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleGroup(groupKey)} aria-label="Toon details">
+                              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </Button>
+                          </TableCell>
+                          <TableCell className="w-6 p-2">
                             <Checkbox checked={checked} onCheckedChange={(v) => toggleGroupSelected(groupKey, v as any)} />
                           </TableCell>
-                          <TableCell className="w-24">{g.weekId}</TableCell>
-                          <TableCell className="w-24">{g.day}</TableCell>
-                          <TableCell className="w-28">{g.licensePlate}</TableCell>
-                          <TableCell className="w-16">{g.country}</TableCell>
-                          <TableCell className="w-16 text-right">{g.vatRate}%</TableCell>
-                          <TableCell>{(!labels || labels.length === 0) ? '-' : (labels.length === 1 ? labels[0] : `Meerdere (${labels.join(', ')})`)}</TableCell>
-                          <TableCell className="w-28 text-right">{formatCurrency(g.total)}</TableCell>
-                          <TableCell className="w-16 text-right">{g.count}</TableCell>
+                          <TableCell className="w-24 p-2">{g.weekId}</TableCell>
+                          <TableCell className="w-24 p-2">{g.day}</TableCell>
+                          <TableCell className="w-28 p-2">{g.licensePlate}</TableCell>
+                          <TableCell className="w-16 p-2">{g.country}</TableCell>
+                          <TableCell className="w-16 p-2 text-right">{g.vatRate}%</TableCell>
+                          <TableCell className="w-48 p-2">{(!labels || labels.length === 0) ? '-' : (labels.length === 1 ? labels[0] : `Meerdere (${labels.join(', ')})`)}</TableCell>
+                          <TableCell className="w-28 p-2 text-right">{formatCurrency(g.total)}</TableCell>
+                          <TableCell className="w-16 p-2 text-right">{g.count}</TableCell>
                         </TableRow>
+                        {isExpanded && (
+                          <TableRow key={`applied-${groupKey}-details`}>
+                            <TableCell />
+                            <TableCell colSpan={9} className="bg-muted/40 p-3">
+                              <div className="space-y-2 text-sm">
+                                {sortedItems.map((item) => (
+                                  <div key={item.id} className="grid grid-cols-[100px_80px_112px_64px_112px_1fr_auto] gap-x-4 items-center">
+                                    <span className="font-medium">{format(new Date(item.usageDate), "dd-MM-yyyy")}</span>
+                                    <span className="text-right">{item.usageTime || "-"}</span>
+                                    <span>{item.licensePlate}</span>
+                                    <span>{item.country}</span>
+                                    <span className="text-right">{formatCurrency(item.amount)} ex</span>
+                                    <span className="text-muted-foreground truncate">{item.source || "-"}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {item.appliedInvoiceId ? (invoiceMap[item.appliedInvoiceId] || item.appliedInvoiceId) : 'Nog niet gekoppeld'}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                        </Fragment>
                         );
                       })
                     )}
@@ -1522,32 +1647,6 @@ export default function TollOverviewPage() {
           </div>
           );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

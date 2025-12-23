@@ -28,7 +28,7 @@ import { format, isPast, parseISO, isToday, isFuture, startOfToday, getYear, get
 import { nl } from 'date-fns/locale';
 import { supabase } from '@/lib/supabase/client';
 import { mapSupabaseToApp } from '@/lib/utils';
-import { analyzePurchaseInvoice } from '@/ai/flows/analyze-purchase-invoice-flow';
+import { extractInvoiceData } from '@/lib/invoice-ocr';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import dynamic from 'next/dynamic';
@@ -217,7 +217,7 @@ export default function PurchasesPage() {
     const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
     const [invoicesToDelete, setInvoicesToDelete] = useState<string[] | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
-    const [useAI, setUseAI] = useState(true); // Default: use AI analysis (same method as fines)
+    // OCR is always enabled for automatic invoice reading
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [analyzingFiles, setAnalyzingFiles] = useState<AnalyzingFile[]>([]);
@@ -240,7 +240,8 @@ export default function PurchasesPage() {
                 purchase_invoice_lines(*),
                 suppliers:supplier_id(company_name)
             `)
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false })
+            .limit(500); // Limit to prevent loading too many records
         if (error) { 
             console.error('Error fetching purchase invoices:', error); 
             toast({ variant: 'destructive', title: 'Fout bij ophalen inkoopfacturen' }); 
@@ -487,6 +488,13 @@ export default function PurchasesPage() {
                 .delete()
                 .in('id', invoicesToDelete);
             if (error) throw error;
+            
+            // Direct update the invoices list by removing deleted items
+            setInvoices(prev => prev.filter(inv => !invoicesToDelete.includes(inv.id)));
+            
+            // Also refresh from server to ensure consistency
+            await fetchInvoices();
+            
             toast({ title: 'Factuur(en) verwijderd' });
         } catch (error) {
             console.error('Error deleting invoices:', error);
@@ -498,13 +506,17 @@ export default function PurchasesPage() {
         }
     };
 
-    const handleCreateSupplier = async (dataUri: string, invoiceId?: string): Promise<boolean> => {
+    const handleCreateSupplier = async (file: File, invoiceId?: string): Promise<boolean> => {
         try {
-            // Use AI flow to analyze invoice (same method as fines)
-            const result = await analyzePurchaseInvoice({ invoiceDataUri: dataUri });
+            // Use OCR to extract supplier details from invoice
+            const result = await extractInvoiceData(file);
             
-            if (!result.supplierName) {
-                toast({ variant: 'destructive', title: 'Leverancier niet gevonden', description: 'Kon leveranciersnaam niet uit factuur halen.' });
+            if (!result.supplierName || result.supplierName.trim() === '') {
+                toast({ 
+                    variant: 'destructive', 
+                    title: 'Leverancier niet gevonden', 
+                    description: 'Kon leveranciersnaam niet uit factuur halen. Probeer het opnieuw of voeg handmatig toe.' 
+                });
                 return false;
             }
             
@@ -512,20 +524,20 @@ export default function PurchasesPage() {
             
             // Check if supplier already exists
             if (suppliersNameMap.has(supplierName)) {
-                toast({ variant: 'destructive', title: 'Leverancier bestaat al', description: `Een leverancier met de naam ${supplierName} is al geregistreerd.` });
+                toast({ 
+                    variant: 'destructive', 
+                    title: 'Leverancier bestaat al', 
+                    description: `Een leverancier met de naam "${supplierName}" is al geregistreerd.` 
+                });
                 return false;
             }
             
-            // Create supplier with all extracted company details from AI
+            // Create supplier with all extracted company details from OCR
             const payload = {
                 company_name: supplierName,
                 kvk_number: result.kvkNumber || null,
                 vat_number: result.vatNumber || null,
                 iban: result.iban || null,
-                street: result.supplierAddress?.street || null,
-                house_number: result.supplierAddress?.houseNumber || null,
-                postal_code: result.supplierAddress?.postalCode || null,
-                city: result.supplierAddress?.city || null,
             };
             
             const { data: newSupplier, error } = await supabase.from('suppliers').insert(payload).select('id').single();
@@ -552,11 +564,18 @@ export default function PurchasesPage() {
                 await fetchInvoices();
             }
             
-            toast({ title: 'Leverancier aangemaakt', description: `${supplierName} is toegevoegd aan uw leveranciers.` });
+            toast({ 
+                title: 'Leverancier aangemaakt', 
+                description: `${supplierName} is automatisch toegevoegd aan uw leveranciers op basis van de factuurgegevens.` 
+            });
             return true;
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error creating supplier:', error);
-            toast({ variant: 'destructive', title: 'Aanmaken mislukt' });
+            toast({ 
+                variant: 'destructive', 
+                title: 'Aanmaken mislukt', 
+                description: error?.message || 'Er is een fout opgetreden bij het aanmaken van de leverancier.' 
+            });
             return false;
         }
     };
@@ -601,86 +620,55 @@ export default function PurchasesPage() {
                     let result: any = null;
                     let supplierId: string | null = null;
                     
-                    // Analyze invoice with AI if enabled (same method as fines)
-                    if (useAI) {
-                        // Update progress: starting AI analysis
-                        setAnalyzingFiles(prev => prev.map((f, idx) => 
-                            idx === fileIndex ? { ...f, progress: 30 } : f
-                        ));
+                    // Extract invoice data using OCR
+                    // Update progress: starting OCR extraction
+                    setAnalyzingFiles(prev => prev.map((f, idx) => 
+                        idx === fileIndex ? { ...f, progress: 30 } : f
+                    ));
+                    
+                    try {
+                        // Extract invoice data using OCR
+                        result = await extractInvoiceData(file);
                         
-                        try {
-                            // Convert file to data URI for AI analysis (same as fines)
-                            const reader = new FileReader();
-                            const dataUri = await new Promise<string>((resolve, reject) => {
-                                reader.onload = (e) => {
-                                    if (e.target?.result) {
-                                        resolve(e.target.result as string);
-                                    } else {
-                                        reject(new Error('Failed to read file'));
-                                    }
-                                };
-                                reader.onerror = reject;
-                                reader.readAsDataURL(file);
-                            });
-                            
-                            // Analyze invoice with AI flow
-                            result = await analyzePurchaseInvoice({ invoiceDataUri: dataUri });
-                            
-                            // Transform AI result to match expected format (preserve all supplier details)
-                            result = {
-                                supplierName: (result.supplierName || '').trim(),
-                                invoiceNumber: result.invoiceNumber || '',
-                                invoiceDate: result.invoiceDate || '',
-                                dueDate: result.dueDate || '',
-                                grandTotal: result.grandTotal || 0,
-                                subTotal: result.subTotal || 0,
-                                vatTotal: result.vatTotal || 0,
-                                isDirectDebit: result.isDirectDebit || false,
-                                lines: result.lines || [],
-                                // Preserve supplier company details for creating supplier profile
-                                kvkNumber: result.kvkNumber,
-                                vatNumber: result.vatNumber,
-                                iban: result.iban,
-                                supplierAddress: result.supplierAddress,
-                            };
-                            
-                            // Validate supplier name - should not be empty
-                            if (!result.supplierName || result.supplierName === '-' || result.supplierName.length === 0) {
-                                console.warn('AI did not extract supplier name correctly:', result);
-                                toast({
-                                    variant: 'destructive',
-                                    title: 'Waarschuwing',
-                                    description: `Leveranciersnaam niet gevonden in ${file.name}. Voeg handmatig toe via factuurdetails.`,
-                                });
-                            }
-                            
-                            // Update progress: analyzed
-                            setAnalyzingFiles(prev => prev.map((f, idx) => 
-                                idx === fileIndex ? { ...f, progress: 50 } : f
-                            ));
-                        } catch (aiError: any) {
-                            console.error('AI analysis error:', aiError);
-                            result = null;
+                        // Validate supplier name - should not be empty
+                        if (!result.supplierName || result.supplierName.trim() === '') {
+                            console.warn('OCR did not extract supplier name correctly:', result);
                             toast({
                                 variant: 'destructive',
-                                title: 'AI analyse fout',
-                                description: `Factuur analyse mislukt voor ${file.name}: ${aiError.message || 'Onbekende fout'}`,
+                                title: 'Waarschuwing',
+                                description: `Leveranciersnaam niet gevonden in ${file.name}. Voeg handmatig toe via factuurdetails.`,
                             });
-                            setAnalyzingFiles(prev => prev.map((f, idx) => 
-                                idx === fileIndex ? { ...f, progress: 50 } : f
-                            ));
                         }
-                    } else {
-                        // No analysis - just upload file
+                        
+                        // Update progress: analyzed
+                        setAnalyzingFiles(prev => prev.map((f, idx) => 
+                            idx === fileIndex ? { ...f, progress: 50 } : f
+                        ));
+                    } catch (ocrError: any) {
+                        console.error('OCR extraction error:', ocrError);
                         result = null;
+                        // Don't show error toast if it's just that extraction is unavailable
+                        // The file will be uploaded and user can enter details manually
+                        if (!ocrError.message?.includes('temporarily unavailable')) {
+                            toast({
+                                variant: 'destructive',
+                                title: 'OCR extractie fout',
+                                description: `Factuur extractie mislukt voor ${file.name}: ${ocrError.message || 'Onbekende fout'}. U kunt de factuur handmatig invoeren.`,
+                            });
+                        } else {
+                            toast({
+                                title: 'Factuur geüpload',
+                                description: `PDF is opgeslagen. Voeg de factuurgegevens handmatig toe door op de factuur te klikken.`,
+                            });
+                        }
                         setAnalyzingFiles(prev => prev.map((f, idx) => 
                             idx === fileIndex ? { ...f, progress: 50 } : f
                         ));
                     }
                     
-                    // Find supplier (only if AI was used and supplier name found)
-                    // Do NOT create supplier automatically - user must do it manually
-                    if (useAI && result?.supplierName) {
+                    // Find supplier (if supplier name found)
+                    // Automatically create supplier if not found
+                    if (result?.supplierName) {
                         const supplierName = result.supplierName.trim();
                         const { data: existingSupplier } = await supabase
                             .from('suppliers')
@@ -690,14 +678,45 @@ export default function PurchasesPage() {
                         
                         if (existingSupplier?.id) {
                             supplierId = existingSupplier.id as string;
+                        } else {
+                            // Auto-create supplier from OCR data
+                            try {
+                                const payload = {
+                                    company_name: supplierName,
+                                    kvk_number: result.kvkNumber || null,
+                                    vat_number: result.vatNumber || null,
+                                    iban: result.iban || null,
+                                };
+                                
+                                const { data: newSupplier, error: createError } = await supabase
+                                    .from('suppliers')
+                                    .insert(payload)
+                                    .select('id')
+                                    .single();
+                                
+                                if (createError) {
+                                    console.error('Error auto-creating supplier:', createError);
+                                    // Continue without supplier - user can add manually
+                                } else if (newSupplier?.id) {
+                                    supplierId = newSupplier.id as string;
+                                    // Refresh suppliers list
+                                    const { data: refreshedSuppliers } = await supabase.from('suppliers').select('*');
+                                    if (refreshedSuppliers) {
+                                        setSuppliers(refreshedSuppliers.map(row => mapSupabaseToApp<Supplier>(row)));
+                                    }
+                                }
+                            } catch (createErr) {
+                                console.error('Error in auto-create supplier:', createErr);
+                                // Continue without supplier
+                            }
                         }
-                        // If no supplier found, supplierId remains null
-                        // The supplier name will be available in AI results for manual creation
                         
-                        // Update progress: supplier checked
+                        // Update progress: supplier checked/created
                         setAnalyzingFiles(prev => prev.map((f, idx) => 
                             idx === fileIndex ? { ...f, progress: 60 } : f
                         ));
+                    } else {
+                        supplierId = null;
                     }
                     
                     // Upload file to Supabase storage (always done, regardless of AI)
@@ -722,8 +741,8 @@ export default function PurchasesPage() {
                         idx === fileIndex ? { ...f, progress: 80 } : f
                     ));
                     
-                    // Check for duplicates (only if AI was used)
-                    if (useAI && supplierId && result?.invoiceNumber && result?.grandTotal) {
+                    // Check for duplicates
+                    if (supplierId && result?.invoiceNumber && result?.grandTotal) {
                         const { data: dup } = await supabase
                             .from('purchase_invoices')
                             .select('id')
@@ -749,22 +768,11 @@ export default function PurchasesPage() {
                         idx === fileIndex ? { ...f, progress: 90 } : f
                     ));
                     
-                    // Extract license plate from AI result (from lines or document)
-                    let invoiceLicensePlate: string | null = null;
-                    if (useAI && result?.lines && result.lines.length > 0) {
-                        // Try to find a license plate in the lines
-                        const plates = result.lines
-                            .map((l: any) => l.licensePlate)
-                            .filter((p: string | undefined) => p && p.trim().length > 0);
-                        if (plates.length > 0) {
-                            // Use the first found license plate
-                            invoiceLicensePlate = plates[0];
-                        }
-                    }
+                    // Extract license plate from OCR result
+                    let invoiceLicensePlate: string | null = result?.licensePlate || null;
                     
-                    // Store AI results in database, especially if supplier not found
-                    // This preserves supplier name and other AI data for manual review
-                    const ocrData = useAI && result ? {
+                    // Store OCR results in database for manual review if needed
+                    const ocrData = result ? {
                         supplierName: result.supplierName || undefined,
                         invoiceNumber: result.invoiceNumber || undefined,
                         invoiceDate: result.invoiceDate || undefined,
@@ -772,11 +780,14 @@ export default function PurchasesPage() {
                         subTotal: result.subTotal || undefined,
                         vatTotal: result.vatTotal || undefined,
                         grandTotal: result.grandTotal || undefined,
-                        isDirectDebit: result.isDirectDebit || false,
-                        lines: result.lines || [],
+                        description: result.description || undefined,
+                        licensePlate: result.licensePlate || undefined,
+                        kvkNumber: result.kvkNumber,
+                        vatNumber: result.vatNumber,
+                        iban: result.iban,
                     } : null;
                     
-                    // Save invoice to database
+                    // Save invoice to database with AI extracted data
                     const invoicePayload = mapAppToSupabase({
                         supplierId: supplierId || null,
                         invoiceNumber: result?.invoiceNumber || null,
@@ -799,28 +810,6 @@ export default function PurchasesPage() {
                         .single();
                     
                     if (insErr) throw insErr;
-                    
-                    // Insert invoice lines if present (only if AI was used)
-                    // Note: License plates are stored on the invoice level, not per line
-                    // But we keep the license plate info in the AI results for display
-                    if (useAI && result?.lines && result.lines.length > 0) {
-                        const lineRows = result.lines.map((l: any) => ({
-                            purchase_invoice_id: inserted.id,
-                            description: l.description,
-                            quantity: l.quantity ?? 1,
-                            unit_price: l.unitPrice ?? 0,
-                            vat_rate: l.vatRate ?? 21,
-                            total: l.total ?? (l.quantity ?? 1) * (l.unitPrice ?? 0),
-                            category: null,
-                        }));
-                        const { error: linesErr } = await supabase
-                            .from('purchase_invoice_lines')
-                            .insert(lineRows);
-                        if (linesErr) {
-                            console.error('Error inserting invoice lines:', linesErr);
-                            // Don't fail the entire operation if lines fail
-                        }
-                    }
                 
                     // Update progress: complete
                     setAnalyzingFiles(prev => prev.map((f, idx) => 
@@ -831,9 +820,7 @@ export default function PurchasesPage() {
             
             toast({
                 title: 'Facturen geüpload',
-                description: useAI
-                    ? `${fileArray.length} factuur(en) succesvol geüpload en geanalyseerd met AI.`
-                    : `${fileArray.length} factuur(en) geüpload. Voeg handmatig de gegevens toe door op de factuur te klikken.`,
+                description: `${fileArray.length} factuur(en) succesvol geüpload en automatisch geanalyseerd. Leveranciers en factuurgegevens zijn automatisch ingelezen.`,
             });
             
             // Explicitly refresh invoices after upload to ensure UI updates
@@ -881,6 +868,14 @@ export default function PurchasesPage() {
                 .update({ category: newCategory })
                 .eq('id', invoiceId);
             if (error) throw error;
+            
+            // Direct update the invoices list
+            setInvoices(prev => prev.map(inv => 
+                inv.id === invoiceId 
+                    ? { ...inv, category: newCategory }
+                    : inv
+            ));
+            
             toast({ title: 'Categorie bijgewerkt', description: 'De factuurcategorie is succesvol gewijzigd.' });
         } catch (error) {
             console.error('Error updating category:', error);
@@ -895,9 +890,15 @@ export default function PurchasesPage() {
                 .update({ license_plate: newPlate === '__none__' ? null : newPlate })
                 .eq('id', invoiceId);
             if (error) throw error;
+            
+            // Direct update the invoices list
+            setInvoices(prev => prev.map(inv => 
+                inv.id === invoiceId 
+                    ? { ...inv, licensePlate: newPlate === '__none__' ? undefined : newPlate }
+                    : inv
+            ));
+            
             toast({ title: 'Kenteken bijgewerkt' });
-            // Refresh invoices to show updated license plate
-            await fetchInvoices();
         } catch (error) {
             console.error('Error updating license plate:', error);
             toast({ variant: 'destructive', title: 'Fout', description: 'Kon het kenteken niet bijwerken.' });
@@ -911,9 +912,15 @@ export default function PurchasesPage() {
                 .update({ license_plate: newPlate === '__none__' ? null : newPlate })
                 .eq('id', invoiceId);
             if (error) throw error;
+            
+            // Direct update the invoices list
+            setInvoices(prev => prev.map(inv => 
+                inv.id === invoiceId 
+                    ? { ...inv, licensePlate: newPlate === '__none__' ? undefined : newPlate }
+                    : inv
+            ));
+            
             toast({ title: 'Kenteken bijgewerkt' });
-            // Refresh invoices to show updated license plate
-            await fetchInvoices();
         } catch (error) {
             console.error('Error updating invoice license plate:', error);
             toast({ variant: 'destructive', title: 'Fout', description: 'Kon het kenteken niet bijwerken.' });
@@ -943,6 +950,29 @@ export default function PurchasesPage() {
 
     return (
         <div className="space-y-8">
+            <Alert className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
+                <AlertCircle className="h-4 w-4 text-yellow-600" />
+                <AlertTitle className="text-yellow-800 dark:text-yellow-200">Module tijdelijk uitgeschakeld</AlertTitle>
+                <AlertDescription className="text-yellow-700 dark:text-yellow-300">
+                    De inkoopfacturen module is tijdelijk uitgeschakeld vanwege technische problemen. 
+                    Deze functionaliteit wordt binnenkort weer beschikbaar gemaakt.
+                </AlertDescription>
+            </Alert>
+            
+            <Card>
+                <CardContent className="p-8 text-center">
+                    <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h2 className="text-2xl font-bold mb-2">Module niet beschikbaar</h2>
+                    <p className="text-muted-foreground">
+                        De inkoopfacturen functionaliteit is tijdelijk uitgeschakeld. 
+                        Probeer het later opnieuw.
+                    </p>
+                </CardContent>
+            </Card>
+            
+            {/* Original content is hidden when disabled */}
+            {false && (
+            <>
             <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold">Inkoopfacturen</h1>
@@ -961,38 +991,10 @@ export default function PurchasesPage() {
             </div>
             
             {showForecast && <PaymentForecastPanel invoices={invoices} />}
+            
 
              <Alert className="border-dashed border-2">
                  <div className="flex flex-col items-center justify-center p-6 text-center space-y-4">
-                    <div className="flex flex-col gap-3 w-full max-w-md">
-                        <div className="flex flex-col gap-3 items-center justify-center">
-                            <div className="flex items-center gap-4 justify-center flex-wrap">
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        id="use-ai-toggle"
-                                        checked={useAI}
-                                        onChange={(e) => setUseAI(e.target.checked)}
-                                        disabled={isUploading}
-                                        className="h-4 w-4"
-                                    />
-                                    <label htmlFor="use-ai-toggle" className="text-sm cursor-pointer">
-                                        AI-analyse gebruiken
-                                    </label>
-                                </div>
-                                {useAI && (
-                                    <Badge variant="outline" className="text-xs text-green-600">
-                                        ✓ AI Analyse
-                                    </Badge>
-                                )}
-                            </div>
-                            {!useAI && (
-                                <p className="text-xs text-muted-foreground text-center">
-                                    Alleen bestand uploaden zonder analyse. Handmatig invullen via factuurdetails.
-                                </p>
-                            )}
-                        </div>
-                    </div>
                     <div
                         className="flex flex-col items-center justify-center cursor-pointer w-full"
                         onDrop={handleDrop}
@@ -1016,9 +1018,7 @@ export default function PurchasesPage() {
                              <div className="flex items-center">
                                 <UploadCloud className="h-4 w-4 mr-2" />
                                 <p className="text-muted-foreground">
-                                    {useAI
-                                        ? 'Sleep facturen hierheen of klik om te uploaden (PDF of afbeelding) - AI analyse ingeschakeld'
-                                        : 'Sleep facturen hierheen of klik om te uploaden (PDF of afbeelding) - Handmatige invoer'}
+                                    Sleep facturen hierheen of klik om te uploaden (PDF) - Automatische OCR extractie
                                 </p>
                             </div>
                         )}
@@ -1029,7 +1029,7 @@ export default function PurchasesPage() {
                             multiple
                             onChange={(e) => handleFileChange(e.target.files)}
                             disabled={isUploading}
-                            accept="image/*,.pdf"
+                            accept=".pdf"
                         />
                     </div>
                 </div>
@@ -1257,6 +1257,8 @@ export default function PurchasesPage() {
                     onPlateChange={handlePlateChange}
                     onInvoicePlateChange={handleInvoicePlateChange}
                 />
+            )}
+            </>
             )}
         </div>
     );

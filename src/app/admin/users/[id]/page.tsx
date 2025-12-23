@@ -8,7 +8,6 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { supabase } from '@/lib/supabase/client';
-import { safeGetSession } from '@/lib/supabase/safe-get-session';
 import { mapSupabaseToApp, mapAppToSupabase } from '@/lib/utils';
 import type { User, Vehicle, UserRole, EmploymentType, WeekDay } from '@/lib/types';
 import { employmentTypes, employmentTypeTranslations, weekDays, salaryScaleGroups, salaryScaleSteps } from '@/lib/types';
@@ -34,7 +33,6 @@ const editUserSchema = z.object({
   hasTravelAllowance: z.boolean().optional(),
   travelDistance: z.coerce.number().optional().nullable(),
   travelAllowanceRate: z.coerce.number().optional().nullable(),
-  overnightAllowanceRate: z.coerce.number().optional().nullable(),
   password: z.string().optional(),
   confirmPassword: z.string().optional(),
 }).refine((data) => {
@@ -162,7 +160,6 @@ export default function UserDetailsPage() {
             hasTravelAllowance: false,
             travelDistance: 0,
             travelAllowanceRate: 0.23,
-            overnightAllowanceRate: 32,
         },
     });
 
@@ -216,7 +213,6 @@ export default function UserDetailsPage() {
                     hasTravelAllowance: userData.hasTravelAllowance ?? false,
                     travelDistance: userData.travelDistance ?? 0,
                     travelAllowanceRate: userData.travelAllowanceRate ?? 0.23,
-                    overnightAllowanceRate: userData.overnightAllowanceRate ?? 32,
                 });
             } else if (error) {
                 toast({ variant: 'destructive', title: 'Gebruiker niet gevonden' });
@@ -252,12 +248,6 @@ export default function UserDetailsPage() {
 
             if (finalData.salaryScaleGroup === undefined) delete finalData.salaryScaleGroup;
             if (finalData.salaryScaleStep === undefined || isNaN(finalData.salaryScaleStep)) delete finalData.salaryScaleStep;
-            const overnightRate = Number(data.overnightAllowanceRate);
-            if (isNaN(overnightRate)) {
-                delete (finalData as any).overnightAllowanceRate;
-            } else {
-                finalData.overnightAllowanceRate = overnightRate;
-            }
 
             const payload = mapAppToSupabase(finalData);
             // Update main fields directly via RLS (admin kan elk profiel bijwerken)
@@ -270,8 +260,8 @@ export default function UserDetailsPage() {
             let token: string | undefined;
 
             if (needsPrivilegedCall) {
-                const session = await safeGetSession();
-                token = session?.access_token;
+                const { data: sessionData } = await supabase.auth.getSession();
+                token = sessionData?.session?.access_token;
                 if (!token) {
                     throw new Error('Geen geldige sessie gevonden voor admin-actie. Log opnieuw in en probeer het opnieuw.');
                 }
@@ -642,43 +632,6 @@ export default function UserDetailsPage() {
                                             </div>
                                         </Card>
                                     )}
-                                    <Card className="p-6 bg-muted/30 border-dashed">
-                                        <div className="space-y-4">
-                                            <div>
-                                                <h3 className="text-md font-medium">Overnachtingsvergoeding medewerker</h3>
-                                                <p className="text-sm text-muted-foreground">
-                                                    Dit bedrag wordt per overnachting uitgekeerd aan de medewerker en opgeteld bij de klant-specifieke onkostenvergoeding.
-                                                </p>
-                                            </div>
-                                            <FormField
-                                                control={form.control}
-                                                name="overnightAllowanceRate"
-                                                render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Bedrag per overnachting</FormLabel>
-                                                        <div className="relative">
-                                                            <Euro className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                                            <FormControl>
-                                                                <Input
-                                                                    type="number"
-                                                                    step="0.01"
-                                                                    min="0"
-                                                                    className="pl-9"
-                                                                    {...field}
-                                                                    value={field.value ?? ''}
-                                                                    onChange={(e) => field.onChange(Number(e.target.value))}
-                                                                />
-                                                            </FormControl>
-                                                        </div>
-                                                        <p className="text-xs text-muted-foreground mt-1">
-                                                            Voorbeeld: klant betaalt €61 per overnachting, medewerker ontvangt €37,50.
-                                                        </p>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                        </div>
-                                    </Card>
                                 </TabsContent>
                             </Tabs>
                         </CardContent>
