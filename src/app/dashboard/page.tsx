@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/use-auth';
 import { useUserCollection } from '@/hooks/use-user-collection';
-import { getISOWeek, getYear, subWeeks } from 'date-fns';
+import { getISOWeek, getISOWeekYear, getYear, subWeeks } from 'date-fns';
 import type { WeeklyLog } from '@/lib/types';
 import { CheckCircle, Edit } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -43,7 +43,7 @@ export default function DashboardPage() {
         const relevantWeeks: string[] = [];
         for (let i = 0; i < 4; i++) {
             const date = subWeeks(today, i);
-            const weekId = `${getYear(date)}-${getISOWeek(date)}`;
+            const weekId = `${getISOWeekYear(date)}-${getISOWeek(date)}`;
             relevantWeeks.push(weekId);
         }
         setWeeks(relevantWeeks);

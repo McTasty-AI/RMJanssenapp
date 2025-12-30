@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { getISOWeek, startOfMonth, endOfMonth, eachWeekOfInterval, getYear, getMonth, addDays, startOfWeek, eachYearOfInterval, startOfYear, endOfYear, parse } from 'date-fns';
+import { getISOWeek, getISOWeekYear, startOfMonth, endOfMonth, eachWeekOfInterval, getYear, getMonth, addDays, startOfWeek, eachYearOfInterval, startOfYear, endOfYear, parse } from 'date-fns';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -15,7 +15,7 @@ export function getWeekIdsForMonth(date: Date): string[] {
   const weeks = eachWeekOfInterval({ start, end }, { weekStartsOn: 1 });
 
   const weekIds = weeks.map(weekStartDate => {
-      const year = getYear(weekStartDate);
+      const year = getISOWeekYear(weekStartDate);
       const weekNumber = getISOWeek(weekStartDate);
       return `${year}-${weekNumber}`;
   }).filter((id): id is string => {
@@ -36,13 +36,13 @@ export function getWeekIdsForYear(date: Date): string[] {
     const weeks = eachWeekOfInterval({ start, end }, { weekStartsOn: 1 });
 
     return weeks.map(weekStartDate => {
-        const weekYear = getYear(weekStartDate);
         // Ensure the week belongs to the target year, as the first/last week can overlap.
         // A week belongs to the year that contains its Thursday.
         const thursdayOfWeek = addDays(weekStartDate, 3);
         if (getYear(thursdayOfWeek) === year) {
+             const weekYear = getISOWeekYear(weekStartDate);
              const weekNumber = getISOWeek(weekStartDate);
-             return `${year}-${weekNumber}`;
+             return `${weekYear}-${weekNumber}`;
         }
         return null;
     }).filter((id): id is string => id !== null);
