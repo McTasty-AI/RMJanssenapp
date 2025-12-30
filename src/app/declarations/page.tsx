@@ -6,7 +6,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, isSameMonth, isSameDay } from 'date-fns';
 import { nl } from 'date-fns/locale';
-import { Calendar as CalendarIcon, UploadCloud, FileText, CheckCircle, XCircle, ChevronLeft, ChevronRight, PlusCircle, Circle, Loader2 } from 'lucide-react';
+import { Calendar as CalendarIcon, UploadCloud, FileText, CheckCircle, XCircle, ChevronLeft, ChevronRight, PlusCircle, Circle, Loader2, Euro } from 'lucide-react';
 import type { DayContentProps } from 'react-day-picker';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -61,7 +61,7 @@ const StatusBadge = ({ status }: { status: DeclarationStatus }) => {
         pending: <FileText className="mr-1 h-3 w-3" />,
         approved: <CheckCircle className="mr-1 h-3 w-3" />,
         rejected: <XCircle className="mr-1 h-3 w-3" />,
-        paid: <CheckCircle className="mr-1 h-3 w-3" />, // TODO: Better icon
+        paid: <Euro className="mr-1 h-3 w-3" />,
     }[status];
 
     return (
