@@ -17,7 +17,7 @@ import { supabase } from '@/lib/supabase/client';
 import { mapSupabaseToApp } from '@/lib/utils';
 import type { Invoice, InvoiceStatus, CompanyProfile, InvoiceLine, Customer } from '@/lib/types';
 import { invoiceFormSchema, type InvoiceFormData } from '@/lib/schemas';
-import { format, parseISO, addDays, getISOWeek, getISOYear } from 'date-fns';
+import { format, parseISO, addDays, getISOWeek, getISOWeekYear } from 'date-fns';
 import { Separator } from '@/components/ui/separator';
 import Image from 'next/image';
 import { useRouter, useParams } from 'next/navigation';
@@ -71,7 +71,7 @@ const deriveWeekId = (reference?: string | null, invoiceDate?: string | null): s
         const parsed = parseISO(invoiceDate);
         if (Number.isNaN(parsed.getTime())) return null;
         const week = String(getISOWeek(parsed)).padStart(2, '0');
-        const year = String(getISOYear(parsed));
+        const year = String(getISOWeekYear(parsed));
         return `${year}-${week}`;
     } catch {
         return null;

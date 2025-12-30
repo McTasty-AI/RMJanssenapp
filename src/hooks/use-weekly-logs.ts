@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { WeeklyLog, DailyLog, DayStatus, User, LeaveRequest, WeeklyLogStatus, Invoice, WeekDay, Toll, LeaveStatus } from '@/lib/types';
-import { getYear, startOfWeek, addDays, format, getMonth, getISOWeek, getDay, isSameDay, parseISO, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
+import { getYear, getISOWeekYear, startOfWeek, addDays, format, getMonth, getISOWeek, getDay, isSameDay, parseISO, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { nl } from 'date-fns/locale';
 import { holidays } from '@/lib/holidays';
 import { useAuth } from './use-auth';
@@ -219,7 +219,7 @@ export const useWeeklyLogs = (currentDate?: Date) => {
 
     // Calculate week start (Monday) and then get ISO week number
     const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
-    const year = getYear(weekStart);
+    const year = getISOWeekYear(weekStart);
     const week = getISOWeek(weekStart);
     const weekId = `${year}-${week}`;
     

@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter as TFoot } from '@/components/ui/table';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from '@/hooks/use-toast';
-import { addWeeks, subWeeks, getISOWeek, getYear, format, startOfWeek, addDays, set, isBefore, parseISO } from 'date-fns';
+import { addWeeks, subWeeks, getISOWeek, getISOWeekYear, getYear, format, startOfWeek, addDays, set, isBefore, parseISO } from 'date-fns';
 import { nl } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, CalendarDays, AlertCircle, Save, Truck, Send, Euro, Unlock, User as UserIcon, BedDouble, Hash, CheckCircle, Clock } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
@@ -428,7 +428,9 @@ export function WeeklyLogForm({
   const [isSubmittingForm, setIsSubmittingForm] = useState(false);
   
   // Calculate lock status early so it can be used in handleSubmitAndSend
-  const weekIsLockedByStatus = weekData.status === 'pending' || weekData.status === 'approved' || isSubmittingForm;
+  // Use local form status if available (e.g. after submission but before refetch)
+  const currentStatus = watch('status');
+  const weekIsLockedByStatus = currentStatus === 'pending' || currentStatus === 'approved' || isSubmittingForm;
   const weekIsLockedByDate = useMemo(() => {
     if (!weekData || !weekData.days || !weekData.days[0]) return false;
     return isWeekLockedByTime(new Date(weekData.days[0].date));
@@ -569,6 +571,9 @@ export function WeeklyLogForm({
 
       const updatedData = { ...getValues(), status: 'pending' as WeeklyLogStatus };
       reset(updatedData); // Reset dirty state and update status in form
+
+      // Stop submitting state after successful save and reset
+      setIsSubmittingForm(false);
     } catch (error) {
       // Re-enable form if save failed
       setIsSubmittingForm(false);
@@ -653,7 +658,7 @@ export function WeeklyLogForm({
   };
 
   const getSubmitButton = () => {
-    const status = weekData.status;
+    const status = watch('status');
 
     if (status === 'approved') {
         return (
@@ -710,7 +715,7 @@ export function WeeklyLogForm({
                 </Button>
                 <div className='text-center'>
                     <CardTitle className="font-headline">
-                        Week {getISOWeek(startOfWeek(new Date(weekData.days[0].date), {weekStartsOn: 1}))} ({getYear(startOfWeek(new Date(weekData.days[0].date), {weekStartsOn: 1}))})
+                        Week {getISOWeek(startOfWeek(new Date(weekData.days[0].date), {weekStartsOn: 1}))} ({getISOWeekYear(startOfWeek(new Date(weekData.days[0].date), {weekStartsOn: 1}))})
                     </CardTitle>
                     <p className="text-sm font-normal text-muted-foreground">
                         {format(startOfWeek(new Date(weekData.days[0].date), {weekStartsOn:1}), 'd MMM', {locale: nl})} - {format(addDays(startOfWeek(new Date(weekData.days[0].date), {weekStartsOn:1}), 6), 'd MMM yyyy', {locale: nl})}
