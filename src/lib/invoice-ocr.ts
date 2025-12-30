@@ -3,61 +3,7 @@
  * Extracts invoice data from PDF using text extraction and pattern matching
  */
 
-// Dynamic import for pdfjs-dist to handle both client and server side
-let pdfjsLib: any = null;
-let workerConfigured = false;
-
-async function getPdfjsLib() {
-  if (pdfjsLib) return pdfjsLib;
-  
-  // Only work on client side
-  if (typeof window === 'undefined') {
-    throw new Error('PDF extraction is only supported on the client side');
-  }
-  
-  if (!workerConfigured) {
-    try {
-      // Use the same import method as PdfPreview.tsx which works successfully
-      // Import pdfjs-dist directly (this works in PdfPreview)
-      const pdfjsDist = await import('pdfjs-dist');
-      
-      // pdfjs-dist exports getDocument directly, not as default
-      let pdfjs: any = pdfjsDist;
-      
-      // Check if it's a default export
-      if (pdfjsDist.default && typeof pdfjsDist.default.getDocument === 'function') {
-        pdfjs = pdfjsDist.default;
-      } else if (typeof pdfjsDist.getDocument !== 'function') {
-        // Try to find getDocument in the module
-        throw new Error('getDocument method not found in pdfjs-dist module');
-      }
-      
-      // Validate that we have a valid pdfjs object
-      if (!pdfjs || typeof pdfjs.getDocument !== 'function') {
-        throw new Error('PDF.js library loaded but getDocument method not found');
-      }
-      
-      // Completely disable worker by setting it to an invalid URL that will fail immediately
-      // This forces PDF.js to use main thread from the start
-      if (pdfjs.GlobalWorkerOptions) {
-        // Use a data URL that will fail to load, forcing main thread usage
-        pdfjs.GlobalWorkerOptions.workerSrc = 'data:application/javascript,void(0);';
-        console.log('PDF.js worker disabled - using main thread');
-      }
-      
-      pdfjsLib = pdfjs;
-      workerConfigured = true;
-    } catch (error) {
-      console.error('Error loading pdfjs-dist:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const errorStack = error instanceof Error ? error.stack : '';
-      console.error('Full error details:', { errorMessage, errorStack, error });
-      throw new Error(`Failed to load PDF.js library: ${errorMessage}`);
-    }
-  }
-  
-  return pdfjsLib;
-}
+import { extractPdfTextAction } from '@/app/actions/extract-pdf';
 
 export interface ExtractedInvoiceData {
   description?: string;
@@ -75,15 +21,12 @@ export interface ExtractedInvoiceData {
 }
 
 /**
- * Extract text from PDF file
- * Note: Currently disabled due to Next.js/Webpack compatibility issues with pdfjs-dist
- * PDFs are still uploaded and stored - users can enter details manually
+ * Extract text from PDF file using Server Action
  */
-async function extractTextFromPdf(_file: File): Promise<string> {
-  // PDF extraction is temporarily disabled due to Next.js/Webpack compatibility issues with pdfjs-dist
-  // The PDF will be uploaded and stored, but extraction must be done manually
-  // TODO: Implement server-side PDF extraction using a library like pdf-parse or an external OCR service
-  throw new Error('PDF extraction is temporarily unavailable due to technical limitations. Please enter invoice details manually. The PDF will be stored for later review.');
+async function extractTextFromPdf(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return await extractPdfTextAction(formData);
 }
 
 /**
@@ -322,20 +265,46 @@ function calculateDueDate(invoiceDate: string, text: string): string | undefined
 
 /**
  * Main extraction function
- * Note: Currently returns empty data due to PDF extraction being disabled
- * Users should enter invoice details manually
  */
 export async function extractInvoiceData(file: File): Promise<ExtractedInvoiceData> {
-  // PDF extraction is temporarily disabled due to Next.js/Webpack compatibility issues
-  // Return empty result - user will enter details manually via the invoice dialog
   try {
-    await extractTextFromPdf(file);
-    // This will never execute due to the error thrown above
-    return {};
+    const text = await extractTextFromPdf(file);
+
+    // Extract data from text
+    const supplierName = extractSupplierName(text);
+    const invoiceNumber = extractInvoiceNumber(text);
+    const invoiceDate = parseDutchDate(text) || undefined;
+    const kvkNumber = extractKvkNumber(text);
+    const vatNumber = extractVatNumber(text);
+    const iban = extractIban(text);
+    const licensePlate = extractLicensePlate(text);
+
+    // Extract amounts
+    // Use regex for multiple labels: Totaal|Total|Te betalen|Amount
+    const grandTotal = extractAmount(text, '(?:Totaal|Total|Te betalen|Amount)');
+    const subTotal = extractAmount(text, '(?:Subtotaal|Subtotal|Exclusief BTW|Excl. BTW)');
+    const vatTotal = extractAmount(text, '(?:BTW|VAT|B.T.W.)');
+
+    // Calculate due date
+    const dueDate = invoiceDate ? calculateDueDate(invoiceDate, text) : undefined;
+
+    return {
+      supplierName,
+      invoiceNumber,
+      invoiceDate,
+      dueDate,
+      subTotal,
+      vatTotal,
+      grandTotal,
+      licensePlate,
+      kvkNumber,
+      vatNumber,
+      iban
+    };
   } catch (error: unknown) {
-    // Re-throw the error to inform the caller that extraction is unavailable
+    console.error('OCR Extraction failed:', error);
+    // Rethrow to inform the caller
     const errorMessage = error instanceof Error ? error.message : String(error);
     throw new Error(errorMessage);
   }
 }
-
