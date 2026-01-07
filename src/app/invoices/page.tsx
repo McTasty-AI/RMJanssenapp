@@ -67,18 +67,6 @@ const TollStatusBadge = ({ status }: { status: TollStatus }) => {
     );
 };
 
-const extractInvoiceContext = (reference?: string | null) => {
-    if (!reference) return {};
-    const weekMatch = reference.match(/week\s+(\d{1,2})\s*[-/]\s*(\d{4})/i);
-    const plateMatch = reference.match(/\(([A-Z0-9-]{5,})\)/i);
-    if (!weekMatch || !plateMatch) return {};
-    const week = weekMatch[1].padStart(2, '0');
-    const year = weekMatch[2];
-    const weekId = `${year}-${week}`;
-    const licensePlate = plateMatch[1].toUpperCase();
-    return { weekId, licensePlate, key: `${weekId}|${licensePlate}` };
-};
-
 const formatInvoiceReference = (reference?: string | null): string => {
     if (!reference) return '-';
     // Extract week, year, and license plate from reference
@@ -155,7 +143,6 @@ export default function InvoicesPage() {
     const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
     const { toast } = useToast();
     const router = useRouter();
-    type ContextInfo = { weekId?: string; licensePlate?: string; key?: string };
     const [showBulkSendDialog, setShowBulkSendDialog] = useState(false);
     const [bulkSendTargets, setBulkSendTargets] = useState<InvoiceWithTollStatus[]>([]);
     const [bulkNeedsTolWarning, setBulkNeedsTolWarning] = useState<InvoiceWithTollStatus[]>([]);
@@ -165,122 +152,44 @@ export default function InvoicesPage() {
 
     const enrichWithTollStatus = useCallback(async (invoices: Invoice[]): Promise<InvoiceWithTollStatus[]> => {
         if (invoices.length === 0) return [];
-        const contexts: ContextInfo[] = invoices.map(inv => extractInvoiceContext(inv.reference));
-        const invoiceIds = invoices.map(inv => inv.id).filter(Boolean);
-        const contextsWithKey = contexts.filter((ctx): ctx is { weekId: string; licensePlate: string; key: string } =>
-            Boolean(ctx.weekId && ctx.licensePlate && ctx.key)
-        );
-        const contextPlateMap = new Map<string, Set<string>>();
-        contextsWithKey.forEach(ctx => {
-            const week = ctx.weekId;
-            const plate = ctx.licensePlate.toUpperCase();
-            if (!contextPlateMap.has(week)) contextPlateMap.set(week, new Set());
-            contextPlateMap.get(week)!.add(plate);
-        });
-        const weekIds = Array.from(contextPlateMap.keys());
-        const plates = Array.from(new Set(contextsWithKey.map(ctx => ctx.licensePlate.toUpperCase())));
-        try {
-            const appliedPromise = invoiceIds.length > 0
-                ? supabase
-                    .from('toll_entries')
-                    .select('id, applied_invoice_id')
-                    .in('applied_invoice_id', invoiceIds)
-                : Promise.resolve<{ data: any[]; error: null }>({ data: [], error: null });
-            const groupedPromise = weekIds.length > 0 && plates.length > 0
-                ? supabase
-                    .from('toll_entries')
-                    .select('id, week_id, license_plate, applied_invoice_id')
-                    .in('week_id', weekIds)
-                    .in('license_plate', plates)
-                : Promise.resolve<{ data: any[]; error: null }>({ data: [], error: null });
 
-            const [{ data: appliedRows, error: appliedError }, { data: groupedRows, error: groupedError }] = await Promise.all([appliedPromise, groupedPromise]);
-            if (appliedError || groupedError) {
-                console.error('Fout bij ophalen tolstatus', appliedError || groupedError);
+        // New rule (authoritative):
+        // - pending: invoice has at least one blank tol placeholder line (description contains 'tol', quantity=0, unit_price=0, total=0)
+        // - added: invoice has tol lines but none are blank
+        // - none: invoice has no tol lines at all
+        const conceptInvoices = invoices.filter(inv => inv.status === 'concept' && Boolean(inv.id));
+        const invoiceIds = conceptInvoices.map(inv => inv.id).filter(Boolean);
+        try {
+            if (invoiceIds.length === 0) {
                 return invoices.map(inv => ({ ...inv, tollStatus: 'none' }));
             }
 
-            const appliedCountByInvoice: Record<string, number> = {};
-            (appliedRows || []).forEach((row: any) => {
-                const id = row.applied_invoice_id;
+            const { data: tolLines, error } = await supabase
+                .from('invoice_lines')
+                .select('invoice_id,quantity,unit_price,total,description')
+                .in('invoice_id', invoiceIds)
+                .ilike('description', '%tol%')
+                .limit(10000);
+            if (error) throw error;
+
+            const countsByInvoice: Record<string, { total: number; open: number }> = {};
+            (tolLines || []).forEach((row: any) => {
+                const id = row.invoice_id;
                 if (!id) return;
-                appliedCountByInvoice[id] = (appliedCountByInvoice[id] || 0) + 1;
+                if (!countsByInvoice[id]) countsByInvoice[id] = { total: 0, open: 0 };
+                countsByInvoice[id].total += 1;
+                const q = Number(row.quantity || 0);
+                const up = Number(row.unit_price || 0);
+                const tt = Number(row.total || 0);
+                if (q === 0 && up === 0 && tt === 0) countsByInvoice[id].open += 1;
             });
 
-            const pendingByGroup: Record<string, { pending: number; total: number }> = {};
-            (groupedRows || []).forEach((row: any) => {
-                const weekId = row.week_id;
-                const plate = (row.license_plate || '').toUpperCase();
-                if (!weekId || !plate) return;
-                const key = `${weekId}|${plate}`;
-                if (!pendingByGroup[key]) pendingByGroup[key] = { pending: 0, total: 0 };
-                pendingByGroup[key].total += 1;
-                if (!row.applied_invoice_id) {
-                    pendingByGroup[key].pending += 1;
-                }
-            });
-
-            let weeklyLogRows: any[] = [];
-            if (weekIds.length > 0) {
-                const { data: weeklyData, error: weeklyErr } = await supabase
-                    .from('weekly_logs')
-                    .select('id, week_id')
-                    .in('week_id', weekIds);
-                if (weeklyErr) {
-                    console.error('Tolstatus: ophalen weekstaten mislukt', weeklyErr);
-                } else {
-                    weeklyLogRows = weeklyData || [];
-                }
-            }
-            const logIdToWeek: Record<string, string> = {};
-            const weeklyLogIds: string[] = [];
-            weeklyLogRows.forEach((row: any) => {
-                if (row?.id && row?.week_id) {
-                    logIdToWeek[row.id] = row.week_id;
-                    weeklyLogIds.push(row.id);
-                }
-            });
-            let dailyRows: any[] = [];
-            if (weeklyLogIds.length > 0) {
-                const { data: dailyData, error: dailyErr } = await supabase
-                    .from('daily_logs')
-                    .select('weekly_log_id, toll, license_plate')
-                    .in('weekly_log_id', weeklyLogIds);
-                if (dailyErr) {
-                    console.error('Tolstatus: ophalen dagstaten mislukt', dailyErr);
-                } else {
-                    dailyRows = dailyData || [];
-                }
-            }
-            const shouldHaveMap: Record<string, boolean> = {};
-            dailyRows.forEach((row: any) => {
-                const weekId = logIdToWeek[row.weekly_log_id];
-                if (!weekId) return;
-                const plateRaw = row.license_plate ? String(row.license_plate).toUpperCase() : '';
-                if (!plateRaw) return;
-                const allowedPlates = contextPlateMap.get(weekId);
-                if (!allowedPlates || !allowedPlates.has(plateRaw)) return;
-                const tollValue = String(row.toll || '').toLowerCase();
-                if (!tollValue || tollValue === 'geen') return;
-                const key = `${weekId}|${plateRaw}`;
-                shouldHaveMap[key] = true;
-            });
-
-            return invoices.map((inv, idx) => {
-                const context = contexts[idx];
-                const key = context?.key;
-                let tollStatus: TollStatus = 'none';
-                if (appliedCountByInvoice[inv.id]) {
-                    tollStatus = 'added';
-                } else if (key) {
-                    const group = pendingByGroup[key];
-                    if (group && group.pending > 0) {
-                        tollStatus = 'pending';
-                    } else if (shouldHaveMap[key]) {
-                        tollStatus = 'pending';
-                    }
-                }
-                return { ...inv, tollStatus: inv.status === 'concept' ? tollStatus : 'none' };
+            return invoices.map(inv => {
+                if (inv.status !== 'concept') return { ...inv, tollStatus: 'none' };
+                const c = countsByInvoice[inv.id];
+                if (!c || c.total === 0) return { ...inv, tollStatus: 'none' };
+                if (c.open > 0) return { ...inv, tollStatus: 'pending' };
+                return { ...inv, tollStatus: 'added' };
             });
         } catch (error) {
             console.error('Tolstatus ophalen mislukt', error);

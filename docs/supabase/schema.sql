@@ -567,5 +567,26 @@ create index if not exists toll_entries_week_idx on toll_entries(week_id);
 create index if not exists toll_entries_applied_idx on toll_entries(applied_invoice_id);
 
 -- =====================================================
+-- Toll Transactions (staging, import + match & reconcile)
+-- =====================================================
+create table if not exists toll_transactions (
+  id uuid primary key default gen_random_uuid(),
+  license_plate text not null,          -- Kenteken
+  transaction_date date not null,       -- Datum
+  transaction_time text not null,       -- Tijdstip (cruciaal voor uniciteit)
+  amount numeric not null,              -- Bedrag
+  country text,                         -- Land
+  location text,                        -- Locatie
+  import_hash text not null,            -- Unieke hash ter deduplicatie
+  invoice_line_id uuid references invoice_lines(id) on delete set null, -- Koppeling naar factuurregel
+  status text not null default 'new' check (status in ('new','matched','ignored')),
+  created_at timestamptz not null default now()
+);
+create unique index if not exists toll_transactions_import_hash_unique on toll_transactions(import_hash);
+create index if not exists toll_transactions_status_idx on toll_transactions(status);
+create index if not exists toll_transactions_plate_date_idx on toll_transactions(license_plate, transaction_date);
+create index if not exists toll_transactions_invoice_line_idx on toll_transactions(invoice_line_id);
+
+-- =====================================================
 -- RLS wordt geconfigureerd in rls.sql
 -- =====================================================

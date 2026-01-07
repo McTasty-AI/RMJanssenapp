@@ -416,7 +416,7 @@ export default function UserDetailsPage() {
                                                                         <SelectValue placeholder="Kies schaal" />
                                                                     </SelectTrigger>
                                                                 </FormControl>
-                                                                <SelectContent position="popper">
+                                                                <SelectContent side="bottom" align="start">
                                                                     {salaryScaleGroups.map(group => (
                                                                         <SelectItem key={group} value={group}>Schaal {group}</SelectItem>
                                                                     ))}
@@ -439,7 +439,7 @@ export default function UserDetailsPage() {
                                                                         <SelectValue placeholder="Kies trede" />
                                                                     </SelectTrigger>
                                                                 </FormControl>
-                                                                <SelectContent position="popper">
+                                                                <SelectContent side="bottom" align="start">
                                                                     {salaryScaleSteps.map(step => (
                                                                         <SelectItem key={step} value={String(step)}>{step}</SelectItem>
                                                                     ))}
@@ -464,7 +464,7 @@ export default function UserDetailsPage() {
                                                                 <SelectValue placeholder="Selecteer type" />
                                                             </SelectTrigger>
                                                         </FormControl>
-                                                        <SelectContent position="popper">
+                                                        <SelectContent side="bottom" align="start">
                                                             {employmentTypes.map(type => (
                                                                 <SelectItem key={type} value={type}>{employmentTypeTranslations[type]}</SelectItem>
                                                             ))}

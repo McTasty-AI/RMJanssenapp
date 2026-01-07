@@ -626,7 +626,7 @@ export default function CostCalculationPage() {
                             <Truck className="mr-2 h-4 w-4 text-muted-foreground" />
                             <SelectValue placeholder="Selecteer een voertuig..." />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent side="bottom" align="start" className="min-w-[var(--radix-select-trigger-width)]">
                             <SelectItem value="template">Algemeen Sjabloon</SelectItem>
                             {vehicles.map(v => (
                                 <SelectItem key={v.id} value={v.id}>{v.licensePlate} ({v.make} {v.model})</SelectItem>
@@ -673,7 +673,7 @@ export default function CostCalculationPage() {
                                     render={({ field }) => (
                                         <Select onValueChange={field.onChange} value={field.value} disabled={!watchedValues.includePersonnel}>
                                             <SelectTrigger className={inputClass}><SelectValue placeholder="Schaal" /></SelectTrigger>
-                                            <SelectContent>{Object.keys(salaryScales).map(s => <SelectItem key={s} value={s}>Schaal {s}</SelectItem>)}</SelectContent>
+                                            <SelectContent side="bottom" align="start">{Object.keys(salaryScales).map(s => <SelectItem key={s} value={s}>Schaal {s}</SelectItem>)}</SelectContent>
                                         </Select>
                                     )}
                                 />
@@ -683,7 +683,7 @@ export default function CostCalculationPage() {
                                     render={({ field }) => (
                                         <Select onValueChange={(v) => field.onChange(Number(v))} value={String(field.value)} disabled={!watchedValues.includePersonnel}>
                                             <SelectTrigger className={inputClass}><SelectValue placeholder="Trede"/></SelectTrigger>
-                                            <SelectContent>{Object.keys((watchedValues.salaryScale ? (salaryScales as any)[watchedValues.salaryScale] : {}) || {}).map((s: string) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                                            <SelectContent side="bottom" align="start">{Object.keys((watchedValues.salaryScale ? (salaryScales as any)[watchedValues.salaryScale] : {}) || {}).map((s: string) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                                         </Select>
                                     )}
                                 />
@@ -794,7 +794,7 @@ export default function CostCalculationPage() {
                                     <SelectTrigger className="md:w-72">
                                         <SelectValue placeholder={customers.length ? "Selecteer klant" : "Geen klanten beschikbaar"} />
                                     </SelectTrigger>
-                                    <SelectContent>
+                                    <SelectContent side="bottom" align="start" className="min-w-[var(--radix-select-trigger-width)]">
                                         <SelectItem value="none">Geen selectie</SelectItem>
                                         {customers.map(customer => (
                                             <SelectItem key={customer.id} value={customer.id}>
