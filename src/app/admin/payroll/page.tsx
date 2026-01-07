@@ -105,24 +105,43 @@ const WeekDetailsTable = ({ weekId, users, logs, customers, driverFines }: { wee
                             const surchargeMinutes = getOverlapMinutes(startTimeInMinutes, endTimeInMinutes, 0, 5 * 60) + getOverlapMinutes(startTimeInMinutes, endTimeInMinutes, 21 * 60, 24 * 60);
                             surchargeHours += surchargeMinutes / 60;
                         }
-                    } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus'].includes(day.status) && !isHoliday && dayOfWeek !== 0 && dayOfWeek !== 6) {
-                        workHours = 8;
+                    } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(day.status)) {
+                        // Alle deze statussen tellen als 8 uur, behalve weekend
+                        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                            workHours = 8;
+                        }
                     }
                     daysData[dayName] = workHours;
 
-                    if (isHoliday || dayOfWeek === 0) sundayHolidayHours += workHours;
-                    else if (dayOfWeek === 6) saturdayHours += workHours;
-                    else weekdayHours += workHours;
+                    // Bepaal waar de uren bij horen: zondag/feestdag gewerkt = 200%, zaterdag = 150%, weekdagen = 100%/130%
+                    if (day.status === 'gewerkt' && (isHoliday || dayOfWeek === 0)) {
+                        // Gewerkt op zondag of feestdag = altijd 200%
+                        sundayHolidayHours += workHours;
+                    } else if (day.status === 'gewerkt' && dayOfWeek === 6) {
+                        // Gewerkt op zaterdag = altijd 150%
+                        saturdayHours += workHours;
+                    } else if (day.status === 'gewerkt') {
+                        // Gewerkt op weekdag
+                        weekdayHours += workHours;
+                    } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(day.status)) {
+                        // Deze statussen tellen als 8 uur voor salarisadministratie
+                        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                            weekdayHours += 8;
+                        }
+                    }
                 });
             }
 
+            // Bereken 100% en 130% uren: eerste 40 uren zijn 100%, daarboven 130%
+            // Maar zaterdag blijft 150% en zondag/feestdag gewerkt blijft 200%
+            const totalWeekdayHours = weekdayHours;
             let hours100 = 0;
             let hours130 = 0;
-            if (weekdayHours > 40) {
+            if (totalWeekdayHours > 40) {
                 hours100 = 40;
-                hours130 = weekdayHours - 40;
+                hours130 = totalWeekdayHours - 40;
             } else {
-                hours100 = weekdayHours;
+                hours100 = totalWeekdayHours;
             }
 
             const travelDays = workedDays - overnightStays;
@@ -259,6 +278,7 @@ const MonthlyTotalTable = ({ users, logs, customers, weeks, leaveRequests, drive
                 sickDays: 0,
                 vacationDays: 0,
                 atvDays: 0,
+                holidayDays: 0,
                 fineDeduction: 0,
             };
         });
@@ -288,6 +308,7 @@ const MonthlyTotalTable = ({ users, logs, customers, weeks, leaveRequests, drive
                 else if (status === 'ziek') report[user.uid!].sickDays++;
                 else if (status === 'vrij') report[user.uid!].vacationDays++;
                 else if (status === 'atv') report[user.uid!].atvDays++;
+                else if (status === 'feestdag') report[user.uid!].holidayDays++;
             });
         });
 
@@ -327,13 +348,29 @@ const MonthlyTotalTable = ({ users, logs, customers, weeks, leaveRequests, drive
                                 surchargeHours += surchargeMinutes / 60;
                              }
 
-                        } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus'].includes(day.status) && !isHoliday && dayOfWeek !== 0 && dayOfWeek !== 6) {
-                            workHours = 8;
+                        } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(day.status)) {
+                            // Alle deze statussen tellen als 8 uur, behalve weekend
+                            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                                workHours = 8;
+                            }
                         }
                         
-                        if (isHoliday || dayOfWeek === 0) sundayHolidayHours += workHours;
-                        else if (dayOfWeek === 6) saturdayHours += workHours;
-                        else weekdayHours += workHours;
+                        // Bepaal waar de uren bij horen: zondag/feestdag gewerkt = 200%, zaterdag = 150%, weekdagen = 100%/130%
+                        if (day.status === 'gewerkt' && (isHoliday || dayOfWeek === 0)) {
+                            // Gewerkt op zondag of feestdag = altijd 200%
+                            sundayHolidayHours += workHours;
+                        } else if (day.status === 'gewerkt' && dayOfWeek === 6) {
+                            // Gewerkt op zaterdag = altijd 150%
+                            saturdayHours += workHours;
+                        } else if (day.status === 'gewerkt') {
+                            // Gewerkt op weekdag
+                            weekdayHours += workHours;
+                        } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(day.status)) {
+                            // Deze statussen tellen als 8 uur voor salarisadministratie
+                            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                                weekdayHours += 8;
+                            }
+                        }
                     });
                     
                     let hours100 = 0;
@@ -595,7 +632,7 @@ export default function PayrollPage() {
             
             const userReport: Record<string, any> = {};
             const userTotals: Record<string, number> = { 
-                workedDays: 0, sickDays: 0, vacationDays: 0, atvDays: 0, 
+                workedDays: 0, sickDays: 0, vacationDays: 0, atvDays: 0, holidayDays: 0,
                 hours100: 0, hours130: 0, hours150: 0, hours200: 0, 
                 surchargeHours19: 0, travelAllowance: 0, totalExpenseAllowance: 0,
                 totalHours: 0, fineDeduction: 0
@@ -604,7 +641,7 @@ export default function PayrollPage() {
             userWeeks.forEach(weekId => {
                 const log = approvedLogsInYear.find(l => l.userId === user.uid && l.weekId === weekId);
                 const weekReport: Record<string, any> = { 
-                    workedDays: 0, sickDays: 0, vacationDays: 0, atvDays: 0, 
+                    workedDays: 0, sickDays: 0, vacationDays: 0, atvDays: 0, holidayDays: 0,
                     hours100: 0, hours130: 0, hours150: 0, hours200: 0, 
                     surchargeHours19: 0, travelAllowance: 0, totalExpenseAllowance: 0,
                     totalHours: 0, fineDeduction: 0
@@ -666,12 +703,31 @@ export default function PayrollPage() {
                             if (day.status === 'ziek') weekReport.sickDays++;
                             else if (day.status === 'vrij') weekReport.vacationDays++;
                             else if (day.status === 'atv') weekReport.atvDays++;
-                            if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus'].includes(day.status) && !isHoliday && dayOfWeek !== 0 && dayOfWeek !== 6) workHours = 8;
+                            else if (day.status === 'feestdag') weekReport.holidayDays++;
+                            if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(day.status)) {
+                                // Alle deze statussen tellen als 8 uur, behalve weekend
+                                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                                    workHours = 8;
+                                }
+                            }
                         }
                         
-                        if (isHoliday || dayOfWeek === 0) sundayHolidayHours += workHours;
-                        else if (dayOfWeek === 6) saturdayHours += workHours;
-                        else weekdayHours += workHours;
+                        // Bepaal waar de uren bij horen: zondag/feestdag gewerkt = 200%, zaterdag = 150%, weekdagen = 100%/130%
+                        if (day.status === 'gewerkt' && (isHoliday || dayOfWeek === 0)) {
+                            // Gewerkt op zondag of feestdag = altijd 200%
+                            sundayHolidayHours += workHours;
+                        } else if (day.status === 'gewerkt' && dayOfWeek === 6) {
+                            // Gewerkt op zaterdag = altijd 150%
+                            saturdayHours += workHours;
+                        } else if (day.status === 'gewerkt') {
+                            // Gewerkt op weekdag
+                            weekdayHours += workHours;
+                        } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(day.status)) {
+                            // Deze statussen tellen als 8 uur voor salarisadministratie
+                            if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                                weekdayHours += 8;
+                            }
+                        }
                     });
                     
                     if (weekdayHours > 40) {
@@ -706,6 +762,7 @@ export default function PayrollPage() {
                 { key: 'sickDays', label: 'Ziektedagen' },
                 { key: 'vacationDays', label: 'Vakantiedagen' },
                 { key: 'atvDays', label: 'ATV-dagen' },
+                { key: 'holidayDays', label: 'Feestdagen' },
                 { key: 'hours100', label: '100% Uren' },
                 { key: 'hours130', label: '130% Uren' },
                 { key: 'hours150', label: '150% Uren' },
@@ -761,6 +818,7 @@ export default function PayrollPage() {
         { key: 'sickDays', label: 'Ziektedagen', format: (val: number) => val > 0 ? val : '-' },
         { key: 'vacationDays', label: 'Vakantiedagen', format: (val: number) => val > 0 ? val : '-' },
         { key: 'atvDays', label: 'ATV-dagen', format: (val: number) => val > 0 ? val : '-' },
+        { key: 'holidayDays', label: 'Feestdagen', format: (val: number) => val > 0 ? val : '-' },
         { key: 'hours100', label: '100% Uren', format: (val: number) => val > 0 ? val.toFixed(2) : '-' },
         { key: 'hours130', label: '130% Uren', format: (val: number) => val > 0 ? val.toFixed(2) : '-' },
         { key: 'hours150', label: '150% Uren', format: (val: number) => val > 0 ? val.toFixed(2) : '-' },

@@ -290,14 +290,21 @@ export const useMonthlyReport = (monthDate: Date) => {
                     week.surchargeHours += surchargeMinutes / 60;
                 }
 
-                if (isHoliday || dayOfWeek === 0) week.sundayHolidayHours += workHours;
-                else if (dayOfWeek === 6) week.saturdayHours += workHours;
-                else week.weekdayHours += workHours;
-            } else if (day.status !== 'weekend' && day.status !== 'feestdag') {
-                if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus'].includes(day.status)){
-                    if (dayOfWeek !== 0 && dayOfWeek !== 6 && !isHoliday) {
-                       week.weekdayHours += 8;
-                   }
+                // Bepaal waar de uren bij horen: zondag/feestdag gewerkt = 200%, zaterdag = 150%, weekdagen = 100%/130%
+                if (isHoliday || dayOfWeek === 0) {
+                    // Gewerkt op zondag of feestdag = altijd 200%
+                    week.sundayHolidayHours += workHours;
+                } else if (dayOfWeek === 6) {
+                    // Gewerkt op zaterdag = altijd 150%
+                    week.saturdayHours += workHours;
+                } else {
+                    // Gewerkt op weekdag
+                    week.weekdayHours += workHours;
+                }
+            } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(day.status)) {
+                // Deze statussen tellen als 8 uur voor salarisadministratie
+                if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                    week.weekdayHours += 8;
                 }
             }
         });

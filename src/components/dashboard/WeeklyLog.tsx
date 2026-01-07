@@ -224,7 +224,7 @@ const MobileDayCard = memo(({ index, handlePlateChange, assignedPlates, formIsEd
                                 {statusTranslations[status]}
                             </span>
                             <span className="font-bold text-primary text-lg w-16 text-right">
-                                {isWorkDay ? workHours.toFixed(2) : (status !== 'weekend' && status !== 'feestdag' ? '8.00' : '0.00')}
+                                {isWorkDay ? workHours.toFixed(2) : (status !== 'weekend' ? '8.00' : '0.00')}
                             </span>
                         </div>
                     </div>
@@ -244,20 +244,21 @@ const MobileDayCard = memo(({ index, handlePlateChange, assignedPlates, formIsEd
                                         disabled={!formIsEditable}
                                     >
                                     <FormControl>
-                                        <SelectTrigger>
-                                            <CalendarDays className="mr-2 h-4 w-4 opacity-50"/>
-                                            <SelectValue placeholder="Selecteer status" />
+                                        <SelectTrigger className="w-full">
+                                            <CalendarDays className="mr-2 h-4 w-4 opacity-50 shrink-0"/>
+                                            <SelectValue placeholder="Status" />
                                         </SelectTrigger>
                                     </FormControl>
                                     <SelectContent 
                                         position="popper" 
+                                        side="bottom"
                                         align="start" 
                                         sideOffset={4}
                                         collisionPadding={8}
-                                        className="w-[var(--radix-select-trigger-width)]"
+                                        className="w-[var(--radix-select-trigger-width)] max-h-[300px] z-[100]"
                                     >
                                         {Object.entries(statusTranslations).map(([key, value]) => (
-                                        <SelectItem key={key} value={key}>{value}</SelectItem>
+                                        <SelectItem key={key} value={key} className="text-sm">{value}</SelectItem>
                                         ))}
                                     </SelectContent>
                                     </Select>
@@ -438,6 +439,7 @@ export function WeeklyLogForm({
   const { control, getValues, watch, trigger, setValue, reset, formState: { isDirty, isSubmitting } } = form;
   const isMobile = useIsMobile();
   const { toast } = useToast();
+  const tableContainerRef = React.useRef<HTMLDivElement>(null);
   const assignedPlates = useMemo(
     () => currentUser?.assignedLicensePlates || [],
     [currentUser]
@@ -632,6 +634,9 @@ export function WeeklyLogForm({
             case 'atv':
             case 'ouderschapsverlof':
             case 'cursus':
+            case 'feestdag':
+            case 'persoonlijk':
+            case 'onbetaald':
                 dailyHours = 8;
                 break;
         }
@@ -857,8 +862,8 @@ export function WeeklyLogForm({
                     ))}
                 </Accordion>
             ) : (
-                <div className="overflow-x-auto -mx-4 px-4">
-                    <Table className="min-w-full">
+                <div ref={tableContainerRef} className="overflow-x-auto -mx-4 px-4" style={{ position: 'relative' }}>
+                    <Table className="min-w-full" style={{ position: 'relative' }}>
                         <TableHeader>
                             <TableRow>
                                 <TableHead className="w-[100px] min-w-[100px] px-2 text-xs">Dag</TableHead>
@@ -901,20 +906,22 @@ export function WeeklyLogForm({
                                 disabled={!formIsEditable}
                             >
                                 <FormControl>
-                                <SelectTrigger className="h-9 text-xs">
-                                    <CalendarDays className="mr-2 h-3 w-3 opacity-50"/>
-                                    <SelectValue placeholder="Selecteer status" />
+                                <SelectTrigger className="h-9 text-xs w-full">
+                                    <CalendarDays className="mr-2 h-3 w-3 opacity-50 shrink-0"/>
+                                    <SelectValue placeholder="Status" />
                                 </SelectTrigger>
                                 </FormControl>
                                 <SelectContent 
-                                    position="popper" 
+                                    side="bottom"
                                     align="start" 
                                     sideOffset={4}
                                     collisionPadding={8}
-                                    className="w-[var(--radix-select-trigger-width)]"
+                                    className="min-w-[180px] max-h-[300px]"
+                                    style={{ zIndex: 9999 }}
+                                    position="item-aligned"
                                 >
                                 {Object.entries(statusTranslations).map(([key, value]) => (
-                                    <SelectItem key={key} value={key}>{value}</SelectItem>
+                                    <SelectItem key={key} value={key} className="text-xs">{value}</SelectItem>
                                 ))}
                                 </SelectContent>
                             </Select>
@@ -973,7 +980,7 @@ export function WeeklyLogForm({
                         <TableCell className="px-2"><TimeInput name={`days.${index}.endTime`} disabled={!isWorkDay || !formIsEditable} /></TableCell>
                         <TableCell className="px-2"><BreakTimeInput name={`days.${index}.breakTime`} disabled={!isWorkDay || !formIsEditable} /></TableCell>
                         <TableCell className="font-medium px-2 text-xs">
-                            {isWorkDay ? workHours.toFixed(2) : (!['gewerkt', 'weekend', 'feestdag'].includes(status as any) ? '8.00' : '0.00')}
+                            {isWorkDay ? workHours.toFixed(2) : (status !== 'weekend' ? '8.00' : '0.00')}
                         </TableCell>
                         <TableCell className="px-2">
                             <FormField

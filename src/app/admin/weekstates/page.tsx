@@ -36,7 +36,7 @@ const downloadWeekAsExcel = (weekData: WeeklyLogType, driver: User) => {
         const workHours = calculateWorkHours(day);
         let dailyHours = 0;
         if(day.status === 'gewerkt') { dailyHours = workHours; }
-        else if (day.status !== 'weekend' && day.status !== 'feestdag') { dailyHours = 8; }
+        else if (day.status !== 'weekend') { dailyHours = 8; }
         
         const totalKm = (day.endMileage ?? 0) - (day.startMileage ?? 0);
 
@@ -59,7 +59,7 @@ const downloadWeekAsExcel = (weekData: WeeklyLogType, driver: User) => {
         if (day.status === 'gewerkt') {
           dailyHours = calculateWorkHours(day);
           acc.kilometers += (day.endMileage ?? 0) - (day.startMileage ?? 0);
-        } else if (day.status !== 'weekend' && day.status !== 'feestdag') {
+        } else if (day.status !== 'weekend') {
           dailyHours = 8;
         }
         acc.hours += dailyHours;
