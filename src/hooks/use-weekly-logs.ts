@@ -4,7 +4,23 @@ import { useState, useEffect, useCallback } from 'react';
 import type { WeeklyLog, DailyLog, DayStatus, User, LeaveRequest, WeeklyLogStatus, Invoice, WeekDay, Toll, LeaveStatus } from '@/lib/types';
 import { getYear, getISOWeekYear, startOfWeek, addDays, format, getMonth, getISOWeek, getDay, isSameDay, parseISO, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { nl } from 'date-fns/locale';
-import { holidays } from '@/lib/holidays';
+import { holidays, isHoliday } from '@/lib/holidays';
+
+/**
+ * Parse a date string (YYYY-MM-DD) to a local Date object
+ * This avoids timezone issues when comparing dates
+ */
+function parseLocalDate(dateStr: string): Date {
+  // If it's already a full ISO string with time, use parseISO
+  if (dateStr.includes('T') || dateStr.includes('Z')) {
+    const parsed = parseISO(dateStr);
+    // Convert to local date by extracting year, month, day
+    return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  }
+  // Otherwise, parse YYYY-MM-DD format directly
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
 import { useAuth } from './use-auth';
 import { supabase } from '@/lib/supabase/client';
 import { useToast } from './use-toast';
@@ -47,7 +63,7 @@ const getLastEndMileageFromPreviousWeek = async (weekStart: Date, userId: string
   // Get all days from previous week, sorted by date (Monday to Sunday)
   const previousDays = (previousWeeklyLog.daily_logs as any[])
     .map((dl: any) => ({
-      date: parseISO(dl.date),
+      date: parseLocalDate(dl.date),
       endMileage: dl.end_mileage || 0,
       status: dl.status,
     }))
@@ -104,7 +120,7 @@ const generateEmptyWeek = async (date: Date, user: User, approvedLeaveRequests?:
     const dayOfWeek = getDay(dayDate);
     const dayName = format(dayDate, 'EEEE', { locale: nl }).toLowerCase() as WeekDay | 'zaterdag' | 'zondag';
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-    const isHoliday = holidays.some(h => isSameDay(h.date, dayDate));
+    const dayIsHoliday = isHoliday(dayDate);
     
     // Check if this day falls within any approved leave request
     const leaveRequest = leaveRequests?.find(leave => {
@@ -114,7 +130,7 @@ const generateEmptyWeek = async (date: Date, user: User, approvedLeaveRequests?:
     });
     
     let status: DayStatus = 'gewerkt';
-    if (isHoliday) {
+    if (dayIsHoliday) {
       status = 'feestdag';
     } else if (isWeekend) {
       status = 'weekend';
@@ -148,7 +164,7 @@ const generateEmptyWeek = async (date: Date, user: User, approvedLeaveRequests?:
     }
 
     return {
-      date: dayDate.toISOString(),
+      date: format(dayDate, 'yyyy-MM-dd'), // Store as YYYY-MM-DD string to avoid timezone issues
       day: format(dayDate, 'EEEE', { locale: nl }).toLowerCase(),
       status: status,
       startTime: { hour: 0, minute: 0 },
@@ -281,11 +297,11 @@ export const useWeeklyLogs = (currentDate?: Date) => {
         const days = (weeklyLog.daily_logs || [])
           .map((dl: any): DailyLog => {
             // Parse the date and recalculate the correct day name and status to ensure consistency
-            const dayDate = parseISO(dl.date);
+            const dayDate = parseLocalDate(dl.date);
             const correctDayName = format(dayDate, 'EEEE', { locale: nl }).toLowerCase();
             const dayOfWeek = getDay(dayDate);
             const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-            const isHoliday = holidays.some(h => isSameDay(h.date, dayDate));
+            const dayIsHoliday = isHoliday(dayDate);
             
             // Check if this day falls within any approved leave request
             const leaveRequest = approvedLeaveRequests.find(leave => {
@@ -296,11 +312,11 @@ export const useWeeklyLogs = (currentDate?: Date) => {
             
             // Validate and correct status based on date and leave requests
             let correctStatus = dl.status;
-            if (isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof' && dl.status !== 'cursus') {
+            if (dayIsHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof' && dl.status !== 'cursus') {
               correctStatus = 'feestdag';
-            } else if (isWeekend && !isHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof' && dl.status !== 'cursus') {
+            } else if (isWeekend && !dayIsHoliday && dl.status !== 'gewerkt' && dl.status !== 'ziek' && dl.status !== 'vrij' && dl.status !== 'ouderschapsverlof' && dl.status !== 'cursus') {
               correctStatus = 'weekend';
-            } else if (leaveRequest && !isWeekend && !isHoliday) {
+            } else if (leaveRequest && !isWeekend && !dayIsHoliday) {
               // If there's an approved leave request for this day, use the leave type
               if (leaveRequest.type === 'vakantie') {
                 correctStatus = 'vrij';
@@ -311,10 +327,10 @@ export const useWeeklyLogs = (currentDate?: Date) => {
               } else if (leaveRequest.type === 'onbetaald') {
                 correctStatus = 'onbetaald';
               }
-            } else if (!isHoliday && !isWeekend && dl.status === 'feestdag') {
+            } else if (!dayIsHoliday && !isWeekend && dl.status === 'feestdag') {
               // If it's not a holiday but status is feestdag, reset to gewerkt
               correctStatus = 'gewerkt';
-            } else if (!isWeekend && !isHoliday && dl.status === 'weekend') {
+            } else if (!isWeekend && !dayIsHoliday && dl.status === 'weekend') {
               // If it's not a weekend but status is weekend, reset to gewerkt
               correctStatus = 'gewerkt';
             }
@@ -336,14 +352,14 @@ export const useWeeklyLogs = (currentDate?: Date) => {
           })
           // Filter to only include days from the correct week (Monday to Sunday)
           .filter((day: DailyLog) => {
-            const dayDate = parseISO(day.date);
+            const dayDate = parseLocalDate(day.date);
             const dayWeekStart = startOfWeek(dayDate, { weekStartsOn: 1 });
             return isSameDay(dayWeekStart, weekStart);
           })
           // Sort by date to ensure Monday comes first
           .sort((a: DailyLog, b: DailyLog) => {
-            const dateA = parseISO(a.date).getTime();
-            const dateB = parseISO(b.date).getTime();
+            const dateA = parseLocalDate(a.date).getTime();
+            const dateB = parseLocalDate(b.date).getTime();
             return dateA - dateB;
           });
 
@@ -551,24 +567,32 @@ export const useWeeklyLogs = (currentDate?: Date) => {
         }
         
         // Parse the date to recalculate correct day name and validate status
-        const dayDate = parseISO(dateValue);
+        const dayDate = parseLocalDate(dateValue);
         const correctDayName = format(dayDate, 'EEEE', { locale: nl }).toLowerCase();
         const dayOfWeek = getDay(dayDate);
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-        const isHoliday = holidays.some(h => isSameDay(h.date, dayDate));
+        const dayIsHoliday = isHoliday(dayDate);
+        
+        // Validate feestdag status - must be on an actual holiday
+        if (day.status === 'feestdag' && !dayIsHoliday) {
+            toast({
+                variant: 'destructive',
+                title: 'Geen feestdag',
+                description: `De datum ${format(dayDate, 'dd-MM-yyyy')} is geen feestdag. De status 'Feestdag' kan alleen gebruikt worden op officiële feestdagen.`
+            });
+            // Don't save this day - return early to prevent saving invalid data
+            return;
+        }
         
         // Validate and correct status based on date
         let correctStatus = day.status;
-        if (isHoliday && day.status !== 'gewerkt' && day.status !== 'ziek' && day.status !== 'vrij' && day.status !== 'ouderschapsverlof' && day.status !== 'cursus') {
+        if (dayIsHoliday && day.status !== 'gewerkt' && day.status !== 'ziek' && day.status !== 'vrij' && day.status !== 'ouderschapsverlof' && day.status !== 'cursus') {
             // If it's a holiday and status is not one that can override holiday, set to feestdag
             correctStatus = 'feestdag';
-        } else if (isWeekend && !isHoliday && day.status !== 'gewerkt' && day.status !== 'ziek' && day.status !== 'vrij' && day.status !== 'ouderschapsverlof' && day.status !== 'cursus') {
+        } else if (isWeekend && !dayIsHoliday && day.status !== 'gewerkt' && day.status !== 'ziek' && day.status !== 'vrij' && day.status !== 'ouderschapsverlof' && day.status !== 'cursus') {
             // If it's a weekend (not a holiday) and status is not one that can override weekend, set to weekend
             correctStatus = 'weekend';
-        } else if (!isHoliday && !isWeekend && day.status === 'feestdag') {
-            // If it's not a holiday but status is feestdag, reset to gewerkt
-            correctStatus = 'gewerkt';
-        } else if (!isWeekend && !isHoliday && day.status === 'weekend') {
+        } else if (!isWeekend && !dayIsHoliday && day.status === 'weekend') {
             // If it's not a weekend but status is weekend, reset to gewerkt
             correctStatus = 'gewerkt';
         }

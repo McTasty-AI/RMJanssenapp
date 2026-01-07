@@ -21,6 +21,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from '@/hooks/use-toast';
 import { addWeeks, subWeeks, getISOWeek, getISOWeekYear, getYear, format, startOfWeek, addDays, set, isBefore, parseISO } from 'date-fns';
 import { nl } from 'date-fns/locale';
+import { isHoliday } from '@/lib/holidays';
 import { ChevronLeft, ChevronRight, CalendarDays, AlertCircle, Save, Truck, Send, Euro, Unlock, User as UserIcon, BedDouble, Hash, CheckCircle, Clock } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { useIsMobile } from '@/hooks/use-is-mobile';
@@ -138,6 +139,7 @@ BreakTimeInput.displayName = 'BreakTimeInput';
 
 const MobileDayCard = memo(({ index, handlePlateChange, assignedPlates, formIsEditable }: { index: number, handlePlateChange: (index: number, plate: LicensePlate) => void, assignedPlates: LicensePlate[], formIsEditable: boolean }) => {
     const { control, watch, setValue, trigger, getValues } = useFormContext<WeeklyLogFormData>();
+    const { toast } = useToast();
     const dayData = watch(`days.${index}`);
     const { date, day, status, startMileage, endMileage } = dayData;
     const isWorkDay = status === 'gewerkt';
@@ -146,6 +148,29 @@ const MobileDayCard = memo(({ index, handlePlateChange, assignedPlates, formIsEd
     const totalKm = useMemo(() => (endMileage ?? 0) - (startMileage ?? 0), [endMileage, startMileage]);
     
     const handleStatusChange = useCallback((newStatus: DayStatus) => {
+        // Validate feestdag status - check if the date is actually a holiday
+        if (newStatus === 'feestdag') {
+            // Parse date string (format: YYYY-MM-DD) and create local date to avoid timezone issues
+            let dayDate: Date;
+            if (date.includes('T') || date.includes('Z')) {
+                // If it's an ISO string, parse and convert to local
+                const parsed = parseISO(date);
+                dayDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+            } else {
+                // Otherwise, parse YYYY-MM-DD format directly
+                const [year, month, day] = date.split('-').map(Number);
+                dayDate = new Date(year, month - 1, day);
+            }
+            if (!isHoliday(dayDate)) {
+                toast({
+                    title: "Geen feestdag",
+                    description: `De datum ${format(dayDate, 'dd-MM-yyyy')} is geen feestdag. De status 'Feestdag' kan alleen gebruikt worden op officiële feestdagen.`,
+                    variant: "destructive",
+                });
+                return; // Don't change the status
+            }
+        }
+        
         setValue(`days.${index}.status`, newStatus);
         if (newStatus !== 'gewerkt') {
             setValue(`days.${index}.startTime`, { hour: 0, minute: 0 });
@@ -169,7 +194,7 @@ const MobileDayCard = memo(({ index, handlePlateChange, assignedPlates, formIsEd
              setValue(`days.${index}.startMileage`, lastMileage, { shouldDirty: true });
         }
         trigger(`days.${index}`);
-      }, [index, setValue, getValues, trigger]);
+      }, [index, setValue, getValues, trigger, date, toast]);
       
     const handleEndMileageChange = (value: string | number) => {
         const numericValue = value === '' ? 0 : Number(value);
@@ -620,6 +645,30 @@ export function WeeklyLogForm({
   const progressValue = useMemo(() => Math.min((totals.hours / 40) * 100, 100), [totals.hours]);
 
   const handleStatusChange = (index: number, newStatus: DayStatus) => {
+    // Validate feestdag status - check if the date is actually a holiday
+    if (newStatus === 'feestdag') {
+      // Parse date string (format: YYYY-MM-DD) and create local date to avoid timezone issues
+      const dateStr = watchedValues.days[index].date;
+      let dayDate: Date;
+      if (dateStr.includes('T') || dateStr.includes('Z')) {
+        // If it's an ISO string, parse and convert to local
+        const parsed = parseISO(dateStr);
+        dayDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+      } else {
+        // Otherwise, parse YYYY-MM-DD format directly
+        const [year, month, day] = dateStr.split('-').map(Number);
+        dayDate = new Date(year, month - 1, day);
+      }
+      if (!isHoliday(dayDate)) {
+        toast({
+          title: "Geen feestdag",
+          description: `De datum ${format(dayDate, 'dd-MM-yyyy')} is geen feestdag. De status 'Feestdag' kan alleen gebruikt worden op officiële feestdagen.`,
+          variant: "destructive",
+        });
+        return; // Don't change the status
+      }
+    }
+    
     setValue(`days.${index}.status`, newStatus);
     if (newStatus !== 'gewerkt') {
         setValue(`days.${index}.startTime`, { hour: 0, minute: 0 });
