@@ -33,6 +33,7 @@ const editUserSchema = z.object({
   hasTravelAllowance: z.boolean().optional(),
   travelDistance: z.coerce.number().optional().nullable(),
   travelAllowanceRate: z.coerce.number().optional().nullable(),
+  overnightAllowanceRate: z.coerce.number().optional().nullable(),
   password: z.string().optional(),
   confirmPassword: z.string().optional(),
 }).refine((data) => {
@@ -54,7 +55,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Loader2, Save, ArrowLeft, Shield, ChevronsUpDown, CaseSensitive, Hourglass, Scale, Euro, Car, Route } from 'lucide-react';
+import { Loader2, Save, ArrowLeft, Shield, ChevronsUpDown, CaseSensitive, Hourglass, Scale, Euro, Car, Route, BedDouble } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -160,6 +161,7 @@ export default function UserDetailsPage() {
             hasTravelAllowance: false,
             travelDistance: 0,
             travelAllowanceRate: 0.23,
+            overnightAllowanceRate: 32,
         },
     });
 
@@ -213,6 +215,7 @@ export default function UserDetailsPage() {
                     hasTravelAllowance: userData.hasTravelAllowance ?? false,
                     travelDistance: userData.travelDistance ?? 0,
                     travelAllowanceRate: userData.travelAllowanceRate ?? 0.23,
+                    overnightAllowanceRate: userData.overnightAllowanceRate ?? 32,
                 });
             } else if (error) {
                 toast({ variant: 'destructive', title: 'Gebruiker niet gevonden' });
@@ -632,6 +635,38 @@ export default function UserDetailsPage() {
                                             </div>
                                         </Card>
                                     )}
+                                    
+                                    <Separator />
+                                    
+                                    <div>
+                                        <h3 className="text-md font-medium mb-4">Overnachtingsvergoeding</h3>
+                                        <p className="text-sm text-muted-foreground mb-4">
+                                            Dit is het interne tarief dat aan de medewerker wordt uitbetaald voor elke overnachting. Dit tarief wordt gebruikt voor de salarisuitdraai en komt op de onkostenvergoeding. Het commerciële tarief dat op de factuur naar de klant komt wordt per klant ingesteld.
+                                        </p>
+                                        <FormField control={form.control} name="overnightAllowanceRate" render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Intern Overnachtingsstarief per Medewerker</FormLabel>
+                                                <div className="relative">
+                                                    <BedDouble className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                                    <FormControl>
+                                                        <Input 
+                                                            type="number" 
+                                                            step="0.01" 
+                                                            placeholder="32.00" 
+                                                            {...field} 
+                                                            value={field.value ?? ''} 
+                                                            onChange={e => field.onChange(e.target.value ? Number(e.target.value) : null)} 
+                                                            className="pl-9" 
+                                                        />
+                                                    </FormControl>
+                                                </div>
+                                                <p className="text-xs text-muted-foreground pt-1">
+                                                    Standaardwaarde: €32,00 per overnachting
+                                                </p>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )} />
+                                    </div>
                                 </TabsContent>
                             </Tabs>
                         </CardContent>

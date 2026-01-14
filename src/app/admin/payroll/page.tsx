@@ -64,7 +64,7 @@ const StatusBadge = ({ status }: { status?: 'concept' | 'pending' | 'approved' |
 };
 
 
-const WeekDetailsTable = ({ weekId, users, logs, customers, driverFines }: { weekId: string, users: User[], logs: WeeklyLog[], customers: Customer[], driverFines: Fine[]}) => {
+const WeekDetailsTable = ({ weekId, users, logs, customers, driverFines, leaveRequests }: { weekId: string, users: User[], logs: WeeklyLog[], customers: Customer[], driverFines: Fine[], leaveRequests: LeaveRequest[]}) => {
     
     const weeklyReport = useMemo(() => {
         const report: Record<string, any> = {};
@@ -87,8 +87,23 @@ const WeekDetailsTable = ({ weekId, users, logs, customers, driverFines }: { wee
                     const dayName = day.day.toLowerCase();
                     const dayOfWeek = getDay(parseISO(day.date));
                     const isHoliday = holidays.some(h => isSameDay(h.date, parseISO(day.date)));
+                    const dayDate = parseISO(day.date);
+                    
+                    // Check for approved leave request for this day
+                    const userLeave = leaveRequests.find(l => 
+                        l.userId === user.uid && 
+                        isWithinInterval(dayDate, { start: parseISO(l.startDate), end: parseISO(l.endDate) })
+                    );
+                    
+                    // Determine actual status: leave request takes priority (except for sickness)
+                    let actualStatus: DayStatus = day.status;
+                    if (userLeave && day.status !== 'ziek') {
+                        // Approved leave overrides the log status (except sickness)
+                        actualStatus = userLeave.type === 'vakantie' ? 'vrij' : userLeave.type as DayStatus;
+                    }
+                    
                     let workHours = 0;
-                    if(day.status === 'gewerkt') {
+                    if(actualStatus === 'gewerkt') {
                         workedDays++;
                         if (day.overnightStay) overnightStays++;
 
@@ -106,7 +121,7 @@ const WeekDetailsTable = ({ weekId, users, logs, customers, driverFines }: { wee
                             const surchargeMinutes = getOverlapMinutes(startTimeInMinutes, endTimeInMinutes, 0, 5 * 60) + getOverlapMinutes(startTimeInMinutes, endTimeInMinutes, 21 * 60, 24 * 60);
                             surchargeHours += surchargeMinutes / 60;
                         }
-                    } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(day.status)) {
+                    } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(actualStatus)) {
                         // Alle deze statussen tellen als 8 uur, behalve weekend
                         if (dayOfWeek !== 0 && dayOfWeek !== 6) {
                             workHours = 8;
@@ -115,16 +130,16 @@ const WeekDetailsTable = ({ weekId, users, logs, customers, driverFines }: { wee
                     daysData[dayName] = workHours;
 
                     // Bepaal waar de uren bij horen: zondag/feestdag gewerkt = 200%, zaterdag = 150%, weekdagen = 100%/130%
-                    if (day.status === 'gewerkt' && (isHoliday || dayOfWeek === 0)) {
+                    if (actualStatus === 'gewerkt' && (isHoliday || dayOfWeek === 0)) {
                         // Gewerkt op zondag of feestdag = altijd 200%
                         sundayHolidayHours += workHours;
-                    } else if (day.status === 'gewerkt' && dayOfWeek === 6) {
+                    } else if (actualStatus === 'gewerkt' && dayOfWeek === 6) {
                         // Gewerkt op zaterdag = altijd 150%
                         saturdayHours += workHours;
-                    } else if (day.status === 'gewerkt') {
+                    } else if (actualStatus === 'gewerkt') {
                         // Gewerkt op weekdag
                         weekdayHours += workHours;
-                    } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(day.status)) {
+                    } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(actualStatus)) {
                         // Deze statussen tellen als 8 uur voor salarisadministratie
                         if (dayOfWeek !== 0 && dayOfWeek !== 6) {
                             weekdayHours += 8;
@@ -192,7 +207,7 @@ const WeekDetailsTable = ({ weekId, users, logs, customers, driverFines }: { wee
         });
 
         return report;
-    }, [weekId, users, logs, customers, driverFines]);
+    }, [weekId, users, logs, customers, driverFines, leaveRequests]);
 
     const dayRows = ['maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag', 'zondag'];
     const summaryRows = [
@@ -329,8 +344,23 @@ const MonthlyTotalTable = ({ users, logs, customers, weeks, leaveRequests, drive
                     log.days.forEach(day => {
                         const dayOfWeek = getDay(parseISO(day.date));
                         const isHoliday = holidays.some(h => isSameDay(h.date, parseISO(day.date)));
+                        const dayDate = parseISO(day.date);
+                        
+                        // Check for approved leave request for this day
+                        const userLeave = leaveRequests.find(l => 
+                            l.userId === user.uid && 
+                            isWithinInterval(dayDate, { start: parseISO(l.startDate), end: parseISO(l.endDate) })
+                        );
+                        
+                        // Determine actual status: leave request takes priority (except for sickness)
+                        let actualStatus: DayStatus = day.status;
+                        if (userLeave && day.status !== 'ziek') {
+                            // Approved leave overrides the log status (except sickness)
+                            actualStatus = userLeave.type === 'vakantie' ? 'vrij' : userLeave.type as DayStatus;
+                        }
+                        
                         let workHours = 0;
-                        if(day.status === 'gewerkt') {
+                        if(actualStatus === 'gewerkt') {
                             workedDays++;
                             if (day.overnightStay) overnightStays++;
 
@@ -349,7 +379,7 @@ const MonthlyTotalTable = ({ users, logs, customers, weeks, leaveRequests, drive
                                 surchargeHours += surchargeMinutes / 60;
                              }
 
-                        } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(day.status)) {
+                        } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(actualStatus)) {
                             // Alle deze statussen tellen als 8 uur, behalve weekend
                             if (dayOfWeek !== 0 && dayOfWeek !== 6) {
                                 workHours = 8;
@@ -357,16 +387,16 @@ const MonthlyTotalTable = ({ users, logs, customers, weeks, leaveRequests, drive
                         }
                         
                         // Bepaal waar de uren bij horen: zondag/feestdag gewerkt = 200%, zaterdag = 150%, weekdagen = 100%/130%
-                        if (day.status === 'gewerkt' && (isHoliday || dayOfWeek === 0)) {
+                        if (actualStatus === 'gewerkt' && (isHoliday || dayOfWeek === 0)) {
                             // Gewerkt op zondag of feestdag = altijd 200%
                             sundayHolidayHours += workHours;
-                        } else if (day.status === 'gewerkt' && dayOfWeek === 6) {
+                        } else if (actualStatus === 'gewerkt' && dayOfWeek === 6) {
                             // Gewerkt op zaterdag = altijd 150%
                             saturdayHours += workHours;
-                        } else if (day.status === 'gewerkt') {
+                        } else if (actualStatus === 'gewerkt') {
                             // Gewerkt op weekdag
                             weekdayHours += workHours;
-                        } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(day.status)) {
+                        } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(actualStatus)) {
                             // Deze statussen tellen als 8 uur voor salarisadministratie
                             if (dayOfWeek !== 0 && dayOfWeek !== 6) {
                                 weekdayHours += 8;
@@ -684,9 +714,24 @@ export default function PayrollPage() {
                     log.days.forEach(day => {
                         const dayOfWeek = getDay(parseISO(day.date));
                         const isHoliday = holidays.some(h => isSameDay(h.date, parseISO(day.date)));
+                        const dayDate = parseISO(day.date);
+                        
+                        // Check for approved leave request for this day
+                        const userLeave = leaveRequests.find(l => 
+                            l.userId === user.uid && 
+                            isWithinInterval(dayDate, { start: parseISO(l.startDate), end: parseISO(l.endDate) })
+                        );
+                        
+                        // Determine actual status: leave request takes priority (except for sickness)
+                        let actualStatus: DayStatus = day.status;
+                        if (userLeave && day.status !== 'ziek') {
+                            // Approved leave overrides the log status (except sickness)
+                            actualStatus = userLeave.type === 'vakantie' ? 'vrij' : userLeave.type as DayStatus;
+                        }
+                        
                         let workHours = 0;
                         
-                        if (day.status === 'gewerkt') {
+                        if (actualStatus === 'gewerkt') {
                             weekReport.workedDays++;
                             workedDays++;
                             if (day.overnightStay) overnightStays++;
@@ -701,11 +746,11 @@ export default function PayrollPage() {
                                 surchargeHours += surchargeMinutes / 60;
                             }
                         } else {
-                            if (day.status === 'ziek') weekReport.sickDays++;
-                            else if (day.status === 'vrij') weekReport.vacationDays++;
-                            else if (day.status === 'atv') weekReport.atvDays++;
-                            else if (day.status === 'feestdag') weekReport.holidayDays++;
-                            if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(day.status)) {
+                            if (actualStatus === 'ziek') weekReport.sickDays++;
+                            else if (actualStatus === 'vrij') weekReport.vacationDays++;
+                            else if (actualStatus === 'atv') weekReport.atvDays++;
+                            else if (actualStatus === 'feestdag') weekReport.holidayDays++;
+                            if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(actualStatus)) {
                                 // Alle deze statussen tellen als 8 uur, behalve weekend
                                 if (dayOfWeek !== 0 && dayOfWeek !== 6) {
                                     workHours = 8;
@@ -714,16 +759,16 @@ export default function PayrollPage() {
                         }
                         
                         // Bepaal waar de uren bij horen: zondag/feestdag gewerkt = 200%, zaterdag = 150%, weekdagen = 100%/130%
-                        if (day.status === 'gewerkt' && (isHoliday || dayOfWeek === 0)) {
+                        if (actualStatus === 'gewerkt' && (isHoliday || dayOfWeek === 0)) {
                             // Gewerkt op zondag of feestdag = altijd 200%
                             sundayHolidayHours += workHours;
-                        } else if (day.status === 'gewerkt' && dayOfWeek === 6) {
+                        } else if (actualStatus === 'gewerkt' && dayOfWeek === 6) {
                             // Gewerkt op zaterdag = altijd 150%
                             saturdayHours += workHours;
-                        } else if (day.status === 'gewerkt') {
+                        } else if (actualStatus === 'gewerkt') {
                             // Gewerkt op weekdag
                             weekdayHours += workHours;
-                        } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(day.status)) {
+                        } else if (['ziek', 'vrij', 'atv', 'ouderschapsverlof', 'cursus', 'feestdag', 'persoonlijk', 'onbetaald'].includes(actualStatus)) {
                             // Deze statussen tellen als 8 uur voor salarisadministratie
                             if (dayOfWeek !== 0 && dayOfWeek !== 6) {
                                 weekdayHours += 8;
@@ -875,7 +920,7 @@ export default function PayrollPage() {
                         <AccordionItem value={weekId} key={weekId}>
                             <AccordionTrigger className="text-lg font-semibold bg-card p-4 rounded-lg">Week {weekId.split('-')[1]}</AccordionTrigger>
                             <AccordionContent>
-                                <WeekDetailsTable weekId={weekId} users={usersWithLogs} logs={approvedLogsInMonth} customers={customers} driverFines={driverFines} />
+                                <WeekDetailsTable weekId={weekId} users={usersWithLogs} logs={approvedLogsInMonth} customers={customers} driverFines={driverFines} leaveRequests={leaveRequests} />
                             </AccordionContent>
                         </AccordionItem>
                     ))}

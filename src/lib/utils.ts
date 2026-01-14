@@ -1,142 +1,27 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { startOfMonth, endOfMonth, eachWeekOfInterval, getYear, getMonth, addDays, startOfWeek, eachYearOfInterval, startOfYear, endOfYear, parse, getDay } from 'date-fns';
+import { startOfMonth, endOfMonth, eachWeekOfInterval, getYear, getMonth, addDays, startOfWeek, eachYearOfInterval, startOfYear, endOfYear, parse, getDay, getISOWeek, getISOWeekYear, setISOWeek, startOfISOWeek } from 'date-fns';
 
 /**
- * Custom week calculation: Week 1 starts on the first Monday of January
- * (or the Monday after Jan 1 if Jan 1 is not a Monday)
- * 
- * Week 53 of 2025: Dec 29, 2025 - Jan 4, 2026
- * Week 1 of 2026: Jan 5, 2026 - Jan 11, 2026
+ * ISO week calculation: Week 1 is the week that contains January 4th
+ * (or equivalently, the week that contains the first Thursday of the year)
+ * This is the standard ISO 8601 week numbering system.
  */
 
 /**
- * Get the first Monday of a given year
- * Special cases for 2025 and 2026 to ensure correct week numbering:
- * - Week 1 of 2025 starts on Dec 30, 2024 (Monday)
- * - Week 1 of 2026 starts on Jan 5, 2026 (Monday)
- * For other years, use standard calculation
- */
-function getFirstMondayOfYear(year: number): Date {
-  // Special case for 2025: week 1 starts on Dec 30, 2024
-  if (year === 2025) {
-    return new Date(2024, 11, 30); // December 30, 2024
-  }
-  
-  // Special case for 2026: week 1 starts on Jan 5, 2026
-  if (year === 2026) {
-    return new Date(2026, 0, 5); // January 5, 2026
-  }
-  
-  // For other years, use standard calculation
-  const jan1 = new Date(year, 0, 1);
-  const dayOfWeek = getDay(jan1); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-  
-  // If Jan 1 is Monday (1), return it. Otherwise, find the next Monday
-  if (dayOfWeek === 1) {
-    return jan1;
-  } else if (dayOfWeek === 0) {
-    // Jan 1 is Sunday, next Monday is Jan 2
-    return new Date(year, 0, 2);
-  } else {
-    // Jan 1 is Tuesday-Saturday, find the next Monday
-    const daysUntilMonday = 8 - dayOfWeek; // Monday is 1, so 8-2=6 days for Tuesday, etc.
-    return addDays(jan1, daysUntilMonday);
-  }
-}
-
-/**
- * Get the custom week number for a date (1-53)
- * Week 1 starts on the first Monday of January
+ * Get the ISO week number for a date (1-53)
+ * Uses ISO 8601 week numbering: week 1 is the week containing January 4th
  */
 export function getCustomWeek(date: Date): number {
-  const weekStart = startOfWeek(date, { weekStartsOn: 1 });
-  const weekStartYear = getYear(weekStart);
-  
-  // Try current year first
-  const firstMonday = getFirstMondayOfYear(weekStartYear);
-  const daysDiff = Math.floor((weekStart.getTime() - firstMonday.getTime()) / (1000 * 60 * 60 * 24));
-  
-  // Calculate week number for current year
-  let weekNumber = Math.floor(daysDiff / 7) + 1;
-  
-  // Check if we're in week 53 of current year
-  const week53Start = addDays(firstMonday, 52 * 7);
-  if (weekStart.getTime() >= week53Start.getTime()) {
-    // Check if there's actually a week 53 (if week 53 start + 6 days is still in the same year or early next year)
-    const week53End = addDays(week53Start, 6);
-    const week53EndYear = getYear(week53End);
-    if (week53EndYear === weekStartYear || (week53EndYear === weekStartYear + 1 && getMonth(week53End) === 0)) {
-      return 53;
-    }
-    // If week 53 would extend too far, it's actually week 1 of next year
-    // But first check if it belongs to previous year's week 53
-    const prevYear = weekStartYear - 1;
-    const prevYearFirstMonday = getFirstMondayOfYear(prevYear);
-    const prevYearWeek53Start = addDays(prevYearFirstMonday, 52 * 7);
-    if (weekStart.getTime() >= prevYearWeek53Start.getTime()) {
-      const prevYearWeek53End = addDays(prevYearWeek53Start, 6);
-      const prevYearWeek53EndYear = getYear(prevYearWeek53End);
-      if (prevYearWeek53EndYear === prevYear || (prevYearWeek53EndYear === prevYear + 1 && getMonth(prevYearWeek53End) === 0)) {
-        return 53; // It's week 53 of previous year
-      }
-    }
-    return 1; // It's week 1 of next year
-  }
-  
-  // If weekStart is before firstMonday, it belongs to previous year
-  if (daysDiff < 0) {
-    const prevYear = weekStartYear - 1;
-    const prevYearFirstMonday = getFirstMondayOfYear(prevYear);
-    const prevYearDaysDiff = Math.floor((weekStart.getTime() - prevYearFirstMonday.getTime()) / (1000 * 60 * 60 * 24));
-    const prevYearWeekNumber = Math.floor(prevYearDaysDiff / 7) + 1;
-    
-    // Check if it's week 53 of previous year
-    const prevYearWeek53Start = addDays(prevYearFirstMonday, 52 * 7);
-    if (weekStart.getTime() >= prevYearWeek53Start.getTime()) {
-      const prevYearWeek53End = addDays(prevYearWeek53Start, 6);
-      const prevYearWeek53EndYear = getYear(prevYearWeek53End);
-      if (prevYearWeek53EndYear === prevYear || (prevYearWeek53EndYear === prevYear + 1 && getMonth(prevYearWeek53End) === 0)) {
-        return 53;
-      }
-    }
-    
-    return Math.min(Math.max(prevYearWeekNumber, 1), 53);
-  }
-  
-  return Math.min(weekNumber, 53);
+  return getISOWeek(date);
 }
 
 /**
- * Get the year for a custom week
- * The year is determined by which year the Monday of the week falls in,
- * but if the week belongs to week 53 of the previous year, return that year instead
+ * Get the ISO week year for a date
+ * Uses ISO 8601 week numbering: the year that contains the Thursday of the week
  */
 export function getCustomWeekYear(date: Date): number {
-  const weekStart = startOfWeek(date, { weekStartsOn: 1 });
-  const weekStartYear = getYear(weekStart);
-  
-  // Check if this week belongs to the previous year's week 53
-  const firstMonday = getFirstMondayOfYear(weekStartYear);
-  const daysDiff = Math.floor((weekStart.getTime() - firstMonday.getTime()) / (1000 * 60 * 60 * 24));
-  
-  if (daysDiff < 0) {
-    // Week belongs to previous year
-    const prevYear = weekStartYear - 1;
-    const prevYearFirstMonday = getFirstMondayOfYear(prevYear);
-    const prevYearWeek53Start = addDays(prevYearFirstMonday, 52 * 7);
-    
-    if (weekStart.getTime() >= prevYearWeek53Start.getTime()) {
-      const prevYearWeek53End = addDays(prevYearWeek53Start, 6);
-      const prevYearWeek53EndYear = getYear(prevYearWeek53End);
-      if (prevYearWeek53EndYear === prevYear || (prevYearWeek53EndYear === prevYear + 1 && getMonth(prevYearWeek53End) === 0)) {
-        return prevYear; // It's week 53 of previous year
-      }
-    }
-    return prevYear;
-  }
-  
-  return weekStartYear;
+  return getISOWeekYear(date);
 }
 
 export function cn(...inputs: ClassValue[]) {
@@ -152,15 +37,22 @@ export function getWeekIdsForMonth(date: Date): string[] {
   const weeks = eachWeekOfInterval({ start, end }, { weekStartsOn: 1 });
 
   const weekIds = weeks.map(weekStartDate => {
-      const year = getCustomWeekYear(weekStartDate);
-      const weekNumber = getCustomWeek(weekStartDate);
+      const year = getISOWeekYear(weekStartDate);
+      const weekNumber = getISOWeek(weekStartDate);
       return `${year}-${weekNumber}`;
   }).filter((id): id is string => {
     // Correctly determine if the week belongs to the target month.
-    // A week belongs to the month if its Monday is in the month.
+    // A week belongs to the month if any day of the week is in the month.
     const weekStartDate = getDateFromWeekId(id);
     if (!weekStartDate) return false;
-    return getMonth(weekStartDate) === targetMonth;
+    // Check if any day of the week falls in the target month
+    for (let i = 0; i < 7; i++) {
+      const dayInWeek = addDays(weekStartDate, i);
+      if (getMonth(dayInWeek) === targetMonth) {
+        return true;
+      }
+    }
+    return false;
   });
     
   return [...new Set(weekIds)]; // Return unique week IDs
@@ -168,16 +60,27 @@ export function getWeekIdsForMonth(date: Date): string[] {
 
 export function getWeekIdsForYear(date: Date): string[] {
     const year = getYear(date);
-    const firstMonday = getFirstMondayOfYear(year);
     const weekIds: string[] = [];
     
-    // Generate all weeks for the year (up to 53 weeks)
+    // Start from January 1st of the year
+    const jan1 = new Date(year, 0, 1);
+    // Get the ISO week year for Jan 1
+    const isoYear = getISOWeekYear(jan1);
+    
+    // If ISO year differs from calendar year, start from the first week of the ISO year
+    let startDate = jan1;
+    if (isoYear !== year) {
+      // Find the first week of the ISO year
+      startDate = startOfISOWeek(setISOWeek(new Date(isoYear, 0, 4), 1));
+    }
+    
+    // Generate all weeks for the ISO year (up to 53 weeks)
     for (let weekNum = 1; weekNum <= 53; weekNum++) {
-      const weekStart = addDays(firstMonday, (weekNum - 1) * 7);
-      const weekYear = getCustomWeekYear(weekStart);
+      const weekStart = startOfISOWeek(setISOWeek(startDate, weekNum));
+      const weekYear = getISOWeekYear(weekStart);
       
-      // Only include weeks where the Monday falls in the target year
-      if (getYear(weekStart) === year) {
+      // Only include weeks that belong to the target ISO year
+      if (weekYear === year) {
         weekIds.push(`${weekYear}-${weekNum}`);
       }
     }
@@ -189,16 +92,16 @@ export function getDateFromWeekId(weekId: string): Date | null {
   const match = weekId.match(/^(\d{4})-(\d{1,2})$/);
   if (!match) return null;
 
-  const year = parseInt(match[1], 10);
+  const isoYear = parseInt(match[1], 10);
   const weekNumber = parseInt(match[2], 10);
 
-  if (isNaN(year) || isNaN(weekNumber) || weekNumber < 1 || weekNumber > 53) return null;
+  if (isNaN(isoYear) || isNaN(weekNumber) || weekNumber < 1 || weekNumber > 53) return null;
   
   try {
-    // Get the first Monday of the year
-    const firstMonday = getFirstMondayOfYear(year);
-    // Add the number of weeks (minus 1) to get to the correct week
-    const targetDate = addDays(firstMonday, (weekNumber - 1) * 7);
+    // Use ISO week calculation: week 1 contains January 4th
+    // Set the date to January 4th of the ISO year, then set the ISO week
+    const jan4 = new Date(isoYear, 0, 4);
+    const targetDate = startOfISOWeek(setISOWeek(jan4, weekNumber));
     return targetDate;
   } catch (e) {
     console.error("Error parsing weekId", e);
