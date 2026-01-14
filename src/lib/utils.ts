@@ -30,16 +30,32 @@ export function cn(...inputs: ClassValue[]) {
 
 export function getWeekIdsForMonth(date: Date): string[] {
   const targetMonth = getMonth(date);
+  const targetYear = getYear(date);
   const start = startOfMonth(date);
   const end = endOfMonth(date);
 
   // Get all weeks that overlap with the month
-  const weeks = eachWeekOfInterval({ start, end }, { weekStartsOn: 1 });
+  // We need to include weeks that start before the month (if they overlap)
+  // and weeks that start during or after the month (if they overlap)
+  const weekStart = startOfWeek(start, { weekStartsOn: 1 });
+  const weekEnd = startOfWeek(end, { weekStartsOn: 1 });
+  
+  // Generate all weeks from the week before the month start to the week after the month end
+  const weeks: Date[] = [];
+  let currentWeek = weekStart;
+  // Go back one week to include weeks that start before the month
+  currentWeek = addDays(currentWeek, -7);
+  
+  // Generate weeks until we've covered the month end
+  while (currentWeek <= addDays(weekEnd, 7)) {
+    weeks.push(currentWeek);
+    currentWeek = addDays(currentWeek, 7);
+  }
 
   const weekIds = weeks.map(weekStartDate => {
       const year = getISOWeekYear(weekStartDate);
       const weekNumber = getISOWeek(weekStartDate);
-      return `${year}-${weekNumber}`;
+      return `${year}-${String(weekNumber).padStart(2, '0')}`;
   }).filter((id): id is string => {
     // Correctly determine if the week belongs to the target month.
     // A week belongs to the month if any day of the week is in the month.
@@ -48,7 +64,7 @@ export function getWeekIdsForMonth(date: Date): string[] {
     // Check if any day of the week falls in the target month
     for (let i = 0; i < 7; i++) {
       const dayInWeek = addDays(weekStartDate, i);
-      if (getMonth(dayInWeek) === targetMonth) {
+      if (getMonth(dayInWeek) === targetMonth && getYear(dayInWeek) === targetYear) {
         return true;
       }
     }
@@ -81,7 +97,7 @@ export function getWeekIdsForYear(date: Date): string[] {
       
       // Only include weeks that belong to the target ISO year
       if (weekYear === year) {
-        weekIds.push(`${weekYear}-${weekNum}`);
+        weekIds.push(`${weekYear}-${String(weekNum).padStart(2, '0')}`);
       }
     }
     
