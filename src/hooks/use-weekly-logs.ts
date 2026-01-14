@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { WeeklyLog, DailyLog, DayStatus, User, LeaveRequest, WeeklyLogStatus, Invoice, WeekDay, Toll, LeaveStatus } from '@/lib/types';
-import { getYear, getISOWeekYear, startOfWeek, addDays, format, getMonth, getISOWeek, getDay, isSameDay, parseISO, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
+import { getYear, startOfWeek, addDays, format, getMonth, getDay, isSameDay, parseISO, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { nl } from 'date-fns/locale';
 import { holidays, isHoliday } from '@/lib/holidays';
 
@@ -24,7 +24,7 @@ function parseLocalDate(dateStr: string): Date {
 import { useAuth } from './use-auth';
 import { supabase } from '@/lib/supabase/client';
 import { useToast } from './use-toast';
-import { parseTimeString, parseIntervalString, getDateFromWeekId } from '@/lib/utils';
+import { parseTimeString, parseIntervalString, getDateFromWeekId, getCustomWeek, getCustomWeekYear } from '@/lib/utils';
 import { createInvoiceOnApproval, findCustomerByLicensePlate } from '@/lib/invoice-service';
 
 const LOGS_COLLECTION = 'weekly_logs';
@@ -35,8 +35,8 @@ const getLastEndMileageFromPreviousWeek = async (weekStart: Date, userId: string
   // Calculate previous week
   const previousWeekStart = addDays(weekStart, -7);
   const previousWeekEnd = addDays(previousWeekStart, 6);
-  const previousYear = getYear(previousWeekStart);
-  const previousWeek = getISOWeek(previousWeekStart);
+  const previousYear = getCustomWeekYear(previousWeekStart);
+  const previousWeek = getCustomWeek(previousWeekStart);
   const previousWeekId = `${previousYear}-${previousWeek}`;
   
   // Fetch the previous week's log
@@ -233,10 +233,10 @@ export const useWeeklyLogs = (currentDate?: Date) => {
       return;
     }
 
-    // Calculate week start (Monday) and then get ISO week number
+    // Calculate week start (Monday) and then get custom week number
     const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
-    const year = getISOWeekYear(weekStart);
-    const week = getISOWeek(weekStart);
+    const year = getCustomWeekYear(weekStart);
+    const week = getCustomWeek(weekStart);
     const weekId = `${year}-${week}`;
     
     setIsLoaded(false);

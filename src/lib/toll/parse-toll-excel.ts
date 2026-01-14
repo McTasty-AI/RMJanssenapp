@@ -99,8 +99,8 @@ function toIsoDate(v: any): string | null {
     if (yyyy.length === 2) yyyy = `20${yyyy}`;
     return `${yyyy}-${mm}-${dd}`;
   }
-  const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m2) return s;
+  const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+.*)?$/);
+  if (m2) return `${m2[1]}-${m2[2]}-${m2[3]}`;
   const dt = new Date(s);
   if (!Number.isNaN(dt.getTime())) {
     const yyyy = dt.getFullYear();
@@ -114,6 +114,24 @@ function toIsoDate(v: any): string | null {
 function toHHmm(v: any): string | null {
   if (v == null || v === '') return null;
   if (typeof v === 'number') {
+    // Excel datetime: if number is large (> 1), it's likely a datetime where fractional part is time
+    if (v > 1) {
+      // Try parsing as Excel datetime (integer part is date, fractional part is time)
+      const dateCode = XLSX.SSF.parse_date_code(v);
+      if (dateCode && dateCode.H !== undefined && dateCode.M !== undefined) {
+        const hh = Math.floor(dateCode.H || 0);
+        const mm = Math.floor(dateCode.M || 0);
+        return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+      }
+      // Extract fractional part as time
+      const fractionalPart = v - Math.floor(v);
+      if (fractionalPart > 0) {
+        const totalMinutes = Math.round(fractionalPart * 24 * 60);
+        const hh = Math.floor(totalMinutes / 60) % 24;
+        const mm = totalMinutes % 60;
+        return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+      }
+    }
     // Excel time fraction (0..1) or hours as decimal (e.g. 8.5)
     if (v >= 0 && v < 1) {
       const totalMinutes = Math.round(v * 24 * 60);
@@ -245,29 +263,71 @@ export function parseTollExcelWithMapping(buffer: ArrayBuffer, mapping: TollColu
   }
 
   const out: TollTransactionImportRow[] = [];
+  const skippedRows: Array<{ rowIndex: number; reason: string }> = [];
+  
   for (let r = 1; r < raw.length; r++) {
     const row = raw[r] || [];
-    if (!Array.isArray(row) || row.every((c) => c == null || String(c).trim() === '')) continue;
+    if (!Array.isArray(row) || row.every((c) => c == null || String(c).trim() === '')) {
+      skippedRows.push({ rowIndex: r + 1, reason: 'Empty row' });
+      continue;
+    }
 
     const plate = normalizePlate(row[idxPlate]);
     const dateIso = toIsoDate(row[idxDate]);
     const amount = parseMoney(row[idxAmount]);
-    const time = idxTime !== -1 ? toHHmm(row[idxTime]) ?? '00:00' : '00:00';
+    
+    // Try to extract time from date column if it contains datetime
+    let time = idxTime !== -1 ? toHHmm(row[idxTime]) ?? null : null;
+    
+    // If time is not explicitly mapped, try to extract it from the date column
+    if (!time && idxDate !== -1) {
+      const dateValue = row[idxDate];
+      if (dateValue != null) {
+        const dateStr = String(dateValue);
+        // Check if date string contains time (e.g., "2026-01-07 11:19:24" or Excel datetime)
+        const timeMatch = dateStr.match(/(\d{1,2}):(\d{2})(?::\d{2})?/);
+        if (timeMatch) {
+          time = `${String(Number(timeMatch[1])).padStart(2, '0')}:${timeMatch[2]}`;
+        } else if (typeof dateValue === 'number') {
+          // Excel datetime: integer part is date, fractional part is time
+          const timeFromExcel = toHHmm(dateValue);
+          if (timeFromExcel && timeFromExcel !== '00:00') {
+            time = timeFromExcel;
+          }
+        }
+      }
+    }
+    
+    // Default to '00:00' only if we really can't find a time
+    const finalTime = time ?? '00:00';
+    
     const country = idxCountry !== -1 ? normalizeCountry(row[idxCountry]) : null;
     const vat_rate = idxVat !== -1 ? (parseVat(row[idxVat]) ?? 21) : 21;
     const location = idxLocation !== -1 && row[idxLocation] != null ? String(row[idxLocation]).trim() : null;
 
-    if (!plate || !dateIso || amount == null) continue;
+    if (!plate || !dateIso || amount == null) {
+      const reasons: string[] = [];
+      if (!plate) reasons.push('missing plate');
+      if (!dateIso) reasons.push('missing/invalid date');
+      if (amount == null) reasons.push('missing/invalid amount');
+      skippedRows.push({ rowIndex: r + 1, reason: reasons.join(', ') });
+      continue;
+    }
 
     out.push({
       license_plate: plate,
       transaction_date: dateIso,
-      transaction_time: time,
+      transaction_time: finalTime, // Always use finalTime, never null
       amount: Math.round((Number(amount) + Number.EPSILON) * 100) / 100,
       vat_rate,
       country,
       location: location || null,
     });
+  }
+
+  // Log skipped rows for debugging
+  if (skippedRows.length > 0) {
+    console.log('[TOLL PARSE] Skipped rows:', skippedRows);
   }
 
   return out;
@@ -312,8 +372,33 @@ export function parseTollExcel(buffer: ArrayBuffer): TollTransactionImportRow[] 
 
     const plate = normalizePlate(row[idx.license_plate ?? -1]);
     const dateIso = toIsoDate(row[idx.transaction_date ?? -1]);
-    const time = toHHmm(row[idx.transaction_time ?? -1]) ?? '00:00';
     const amount = parseMoney(row[idx.amount ?? -1]);
+    
+    // Try to extract time from date column if it contains datetime
+    let time = idx.transaction_time != null ? toHHmm(row[idx.transaction_time]) ?? null : null;
+    
+    // If time is not explicitly mapped, try to extract it from the date column
+    if (!time && idx.transaction_date != null) {
+      const dateValue = row[idx.transaction_date];
+      if (dateValue != null) {
+        const dateStr = String(dateValue);
+        // Check if date string contains time (e.g., "2026-01-07 11:19:24" or Excel datetime)
+        const timeMatch = dateStr.match(/(\d{1,2}):(\d{2})(?::\d{2})?/);
+        if (timeMatch) {
+          time = `${String(Number(timeMatch[1])).padStart(2, '0')}:${timeMatch[2]}`;
+        } else if (typeof dateValue === 'number') {
+          // Excel datetime: integer part is date, fractional part is time
+          const timeFromExcel = toHHmm(dateValue);
+          if (timeFromExcel && timeFromExcel !== '00:00') {
+            time = timeFromExcel;
+          }
+        }
+      }
+    }
+    
+    // Default to '00:00' only if we really can't find a time
+    const finalTime = time ?? '00:00';
+    
     const country = normalizeCountry(row[idx.country ?? -1]);
     const vat_rate = idx.vat_rate != null ? (parseVat(row[idx.vat_rate]) ?? 21) : 21;
     const location = row[idx.location ?? -1] != null ? String(row[idx.location ?? -1]).trim() : null;
@@ -323,7 +408,7 @@ export function parseTollExcel(buffer: ArrayBuffer): TollTransactionImportRow[] 
     out.push({
       license_plate: plate,
       transaction_date: dateIso,
-      transaction_time: time,
+      transaction_time: finalTime,
       amount: Math.round((Number(amount) + Number.EPSILON) * 100) / 100,
       vat_rate,
       country,

@@ -10,7 +10,8 @@ import { Label } from '@/components/ui/label';
 import { useAdminData } from '@/hooks/use-admin-data';
 import { useToast } from '@/hooks/use-toast';
 import type { User, WeeklyLog, DailyLog, DayStatus, Customer, LeaveRequest, Fine } from '@/lib/types';
-import { getYear, getMonth, format, getDay, isSameDay, parseISO, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval, getISOWeek, addMonths, subMonths, startOfWeek, addDays } from 'date-fns';
+import { getYear, getMonth, format, getDay, isSameDay, parseISO, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, startOfWeek, addDays } from 'date-fns';
+import { getCustomWeek, getCustomWeekYear } from '@/lib/utils';
 import { nl } from 'date-fns/locale';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -156,8 +157,8 @@ const WeekDetailsTable = ({ weekId, users, logs, customers, driverFines }: { wee
             let fineDeduction = 0;
             if (fineDate) {
                 const fineWeekStart = startOfWeek(fineDate, { weekStartsOn: 1 });
-                const fineYear = getYear(fineWeekStart);
-                const fineWeekNumber = getISOWeek(fineWeekStart);
+                const fineYear = getCustomWeekYear(fineWeekStart);
+                const fineWeekNumber = getCustomWeek(fineWeekStart);
                 const fineWeekId = `${fineYear}-${fineWeekNumber}`;
                 
                 const weekFines = driverFines.filter(f => {
@@ -165,8 +166,8 @@ const WeekDetailsTable = ({ weekId, users, logs, customers, driverFines }: { wee
                     try {
                         const fineDateParsed = parseISO(f.date);
                         const fWeekStart = startOfWeek(fineDateParsed, { weekStartsOn: 1 });
-                        const fYear = getYear(fWeekStart);
-                        const fWeekNumber = getISOWeek(fWeekStart);
+                        const fYear = getCustomWeekYear(fWeekStart);
+                        const fWeekNumber = getCustomWeek(fWeekStart);
                         const fWeekId = `${fYear}-${fWeekNumber}`;
                         return fWeekId === fineWeekId;
                     } catch (e) {
@@ -292,7 +293,7 @@ const MonthlyTotalTable = ({ users, logs, customers, weeks, leaveRequests, drive
             const isHoliday = holidays.some(h => isSameDay(h.date, day));
             if (dayOfWeek === 0 || dayOfWeek === 6 || isHoliday) return;
 
-            const weekId = `${getYear(day)}-${getISOWeek(day)}`;
+            const weekId = `${getCustomWeekYear(day)}-${getCustomWeek(day)}`;
 
             users.forEach(user => {
                 const log = logs.find(l => l.userId === user.uid && l.weekId === weekId);
@@ -402,8 +403,8 @@ const MonthlyTotalTable = ({ users, logs, customers, weeks, leaveRequests, drive
                 const fineDate = getDateFromWeekId(weekId);
                 if (fineDate) {
                     const fineWeekStart = startOfWeek(fineDate, { weekStartsOn: 1 });
-                    const fineYear = getYear(fineWeekStart);
-                    const fineWeekNumber = getISOWeek(fineWeekStart);
+                    const fineYear = getCustomWeekYear(fineWeekStart);
+                    const fineWeekNumber = getCustomWeek(fineWeekStart);
                     const fineWeekId = `${fineYear}-${fineWeekNumber}`;
                     
                     const weekFines = driverFines.filter(f => {
@@ -411,8 +412,8 @@ const MonthlyTotalTable = ({ users, logs, customers, weeks, leaveRequests, drive
                         try {
                             const fineDateParsed = parseISO(f.date);
                             const fWeekStart = startOfWeek(fineDateParsed, { weekStartsOn: 1 });
-                            const fYear = getYear(fWeekStart);
-                            const fWeekNumber = getISOWeek(fWeekStart);
+                            const fYear = getCustomWeekYear(fWeekStart);
+                            const fWeekNumber = getCustomWeek(fWeekStart);
                             const fWeekId = `${fYear}-${fWeekNumber}`;
                             return fWeekId === fineWeekId;
                         } catch (e) {
@@ -656,8 +657,8 @@ export default function PayrollPage() {
                             const fineDateParsed = parseISO(f.date);
                             // Calculate the weekId from the fine date
                             const fineWeekStart = startOfWeek(fineDateParsed, { weekStartsOn: 1 });
-                            const fineYear = getYear(fineWeekStart);
-                            const fineWeekNumber = getISOWeek(fineWeekStart);
+                            const fineYear = getCustomWeekYear(fineWeekStart);
+                            const fineWeekNumber = getCustomWeek(fineWeekStart);
                             const fineWeekId = `${fineYear}-${fineWeekNumber}`;
                             
                             // Compare weekIds directly instead of date ranges

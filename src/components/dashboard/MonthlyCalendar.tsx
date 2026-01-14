@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/use-auth';
 import { useUserCollection } from '@/hooks/use-user-collection';
 import type { WeeklyLog, WeeklyLogStatus, LeaveRequest } from '@/lib/types';
-import { format, addMonths, subMonths, startOfMonth, getDay, isSameDay, getISOWeek, parseISO, isWithinInterval, endOfMonth, eachDayOfInterval, getYear, startOfWeek } from 'date-fns';
+import { format, addMonths, subMonths, startOfMonth, getDay, isSameDay, parseISO, isWithinInterval, endOfMonth, eachDayOfInterval, getYear, startOfWeek } from 'date-fns';
+import { getCustomWeek, getCustomWeekYear } from '@/lib/utils';
 import { nl } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Circle, CheckCircle, Clock, Calendar as CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -249,7 +250,7 @@ export default function MonthlyCalendar() {
                 if (isRelevantLog) {
                     workDaysInMonth.forEach(workDay => {
                          const dateString = format(workDay, 'yyyy-MM-dd');
-                         const logWeekId = `${getYear(workDay)}-${getISOWeek(workDay)}`;
+                         const logWeekId = `${getCustomWeekYear(workDay)}-${getCustomWeek(workDay)}`;
 
                          if(log.weekId === logWeekId) {
                             const currentStatus = dayStatusMap.get(dateString);
@@ -289,8 +290,8 @@ export default function MonthlyCalendar() {
         
         // Calculate weekId from the clicked date
         const weekStart = startOfWeek(date, { weekStartsOn: 1 });
-        const year = getYear(weekStart);
-        const weekNumber = getISOWeek(weekStart);
+        const year = getCustomWeekYear(weekStart);
+        const weekNumber = getCustomWeek(weekStart);
         const weekId = `${year}-${String(weekNumber).padStart(2, '0')}`;
         
         // Navigate to weekstaat tab with the week parameter
@@ -307,24 +308,20 @@ export default function MonthlyCalendar() {
     // Helper component voor WeekNumber met error handling
     const WeekNumberComponent = (props: any) => {
         // react-day-picker kan verschillende prop structuren gebruiken
-        // Probeer eerst number prop (nieuwere versie), dan dates array (oudere versie)
+        // We gebruiken altijd onze custom week berekening, ongeacht welke API wordt gebruikt
         let weekNumber: number | null = null;
         let weekStartDate: Date | null = null;
         
-        if (props.number !== undefined && typeof props.number === 'number') {
-            // Nieuwe API: number prop
-            weekNumber = props.number;
-            if (props.dates && props.dates.length > 0 && props.dates[0] instanceof Date) {
-                weekStartDate = startOfWeek(props.dates[0], { weekStartsOn: 1 });
-            }
-        } else if (props.date && props.date instanceof Date) {
-            // Oude API: date prop
-            weekStartDate = startOfWeek(props.date, { weekStartsOn: 1 });
-            weekNumber = getISOWeek(weekStartDate);
-        } else if (props.dates && props.dates.length > 0 && props.dates[0] instanceof Date) {
-            // Alternatieve API: dates array
+        // Bepaal eerst de week start datum
+        if (props.dates && props.dates.length > 0 && props.dates[0] instanceof Date) {
             weekStartDate = startOfWeek(props.dates[0], { weekStartsOn: 1 });
-            weekNumber = getISOWeek(weekStartDate);
+        } else if (props.date && props.date instanceof Date) {
+            weekStartDate = startOfWeek(props.date, { weekStartsOn: 1 });
+        }
+        
+        // Bereken altijd het custom weeknummer op basis van de week start datum
+        if (weekStartDate) {
+            weekNumber = getCustomWeek(weekStartDate);
         }
         
         if (!weekNumber || weekNumber === null || isNaN(weekNumber)) {
@@ -334,7 +331,8 @@ export default function MonthlyCalendar() {
         try {
             let status: WeeklyLogStatus | undefined;
             if (weekStartDate) {
-                const weekId = `${getYear(weekStartDate)}-${weekNumber}`;
+                const weekYear = getCustomWeekYear(weekStartDate);
+                const weekId = `${weekYear}-${weekNumber}`;
                 status = weekStatusMap.get(weekId);
             }
             
@@ -407,7 +405,7 @@ export default function MonthlyCalendar() {
                                     // Fallback formatter voor als component niet werkt
                                     if (date) {
                                         const weekStart = startOfWeek(date, { weekStartsOn: 1 });
-                                        return String(getISOWeek(weekStart));
+                                        return String(getCustomWeek(weekStart));
                                     }
                                     return String(weekNumber);
                                 }}
@@ -443,7 +441,7 @@ export default function MonthlyCalendar() {
                                     // Fallback formatter voor als component niet werkt
                                     if (date) {
                                         const weekStart = startOfWeek(date, { weekStartsOn: 1 });
-                                        return String(getISOWeek(weekStart));
+                                        return String(getCustomWeek(weekStart));
                                     }
                                     return String(weekNumber);
                                 }}
@@ -475,7 +473,7 @@ export default function MonthlyCalendar() {
                                     // Fallback formatter voor als component niet werkt
                                     if (date) {
                                         const weekStart = startOfWeek(date, { weekStartsOn: 1 });
-                                        return String(getISOWeek(weekStart));
+                                        return String(getCustomWeek(weekStart));
                                     }
                                     return String(weekNumber);
                                 }}

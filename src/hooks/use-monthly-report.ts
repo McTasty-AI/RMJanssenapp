@@ -5,7 +5,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './use-auth';
 import { supabase } from '@/lib/supabase/client';
-import { getYear, getDay, isSameDay, parseISO, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval, format, getISOWeek, startOfWeek, addDays } from 'date-fns';
+import { getYear, getDay, isSameDay, parseISO, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval, format, startOfWeek, addDays } from 'date-fns';
+import { getCustomWeek, getCustomWeekYear } from '@/lib/utils';
 import { nl } from 'date-fns/locale';
 import { holidays } from '@/lib/holidays';
 import type { WeeklyLog, DailyLog, LeaveRequest, DayStatus } from '@/lib/types';
@@ -270,7 +271,7 @@ export const useMonthlyReport = (monthDate: Date) => {
 
         monthlyDataMap.forEach((dayData, dateString) => {
             const date = parseISO(dateString);
-            const weekId = `${getYear(date)}-${getISOWeek(date)}`;
+            const weekId = `${getCustomWeekYear(date)}-${getCustomWeek(date)}`;
             if (!weeklyTotals.has(weekId)) weeklyTotals.set(weekId, { weekdayHours: 0, saturdayHours: 0, sundayHolidayHours: 0, surchargeHours: 0, overnights: 0 });
             
             const week = weeklyTotals.get(weekId)!;

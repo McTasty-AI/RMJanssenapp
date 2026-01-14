@@ -9,7 +9,8 @@ import { useToast } from '@/hooks/use-toast';
 import type { Customer, MileageRateType } from '@/lib/types';
 import { supabase } from '@/lib/supabase/client';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getISOWeek, getYear, format, startOfWeek, addDays, set, startOfMonth, endOfMonth, eachWeekOfInterval, addMonths, subMonths, getWeeksInMonth, addWeeks, subWeeks } from 'date-fns';
+import { getYear, format, startOfWeek, addDays, set, startOfMonth, endOfMonth, eachWeekOfInterval, addMonths, subMonths, getWeeksInMonth, addWeeks, subWeeks } from 'date-fns';
+import { getCustomWeek, getCustomWeekYear } from '@/lib/utils';
 import { nl } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Euro, Percent, Save, Loader2, UploadCloud, CheckCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -52,7 +53,7 @@ export default function AdminRatesPage() {
     const [timeRange, setTimeRange] = useState<TimeRange>('month');
     const { toast } = useToast();
 
-    const selectedWeekId = useMemo(() => `${getYear(selectedWeek)}-${getISOWeek(selectedWeek)}`, [selectedWeek]);
+    const selectedWeekId = useMemo(() => `${getCustomWeekYear(selectedWeek)}-${getCustomWeek(selectedWeek)}`, [selectedWeek]);
 
     const { control, handleSubmit, reset, setValue, watch, formState: { isDirty } } = useForm<{ rates: RateFormData[] }>({
         resolver: zodResolver(formSchema),
@@ -342,7 +343,7 @@ export default function AdminRatesPage() {
                             </Button>
                             <div className='text-center'>
                                 <CardTitle className="font-headline">
-                                    Week {getISOWeek(selectedWeek)} ({getYear(selectedWeek)})
+                                    Week {getCustomWeek(selectedWeek)} ({getCustomWeekYear(selectedWeek)})
                                 </CardTitle>
                                 <p className="text-sm font-normal text-muted-foreground">
                                     {format(startOfWeek(selectedWeek, {weekStartsOn:1}), 'd MMM', {locale: nl})} - {format(addDays(startOfWeek(selectedWeek, {weekStartsOn:1}), 6), 'd MMM yyyy', {locale: nl})}

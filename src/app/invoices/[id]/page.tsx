@@ -12,12 +12,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, PlusCircle, Trash2, Save, Send, CheckCircle, FileText, ArrowUp, ArrowDown, Download, ChevronDown, FileMinus } from 'lucide-react';
+import { Loader2, PlusCircle, Trash2, Save, Send, CheckCircle, FileText, ArrowUp, ArrowDown, Download, ChevronDown, FileMinus, Coins } from 'lucide-react';
 import { supabase } from '@/lib/supabase/client';
+import { getAuthHeaders } from '@/lib/auth/client-token';
 import { mapSupabaseToApp } from '@/lib/utils';
 import type { Invoice, InvoiceStatus, CompanyProfile, InvoiceLine, Customer } from '@/lib/types';
 import { invoiceFormSchema, type InvoiceFormData } from '@/lib/schemas';
-import { format, parseISO, addDays, getISOWeek, getISOWeekYear } from 'date-fns';
+import { format, parseISO, addDays } from 'date-fns';
+import { getCustomWeek, getCustomWeekYear } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import Image from 'next/image';
 import { useRouter, useParams } from 'next/navigation';
@@ -70,8 +72,8 @@ const deriveWeekId = (reference?: string | null, invoiceDate?: string | null): s
     try {
         const parsed = parseISO(invoiceDate);
         if (Number.isNaN(parsed.getTime())) return null;
-        const week = String(getISOWeek(parsed)).padStart(2, '0');
-        const year = String(getISOWeekYear(parsed));
+        const week = String(getCustomWeek(parsed)).padStart(2, '0');
+        const year = String(getCustomWeekYear(parsed));
         return `${year}-${week}`;
     } catch {
         return null;
@@ -90,6 +92,7 @@ export default function EditInvoicePage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
     const [isCreatingCredit, setIsCreatingCredit] = useState(false);
+    const [isAddingToll, setIsAddingToll] = useState(false);
     const [nextInvoiceNumber, setNextInvoiceNumber] = useState('');
     const [showSentWarning, setShowSentWarning] = useState(false);
     const [customerDetails, setCustomerDetails] = useState<Customer | null>(null);
@@ -525,14 +528,23 @@ export default function EditInvoicePage() {
                 if (lineErr) throw lineErr;
             }
 
-            // If there are no toll lines anymore on this invoice, unapply any linked toll entries
+            // If there are no toll lines anymore on this invoice, unlink any linked toll transactions
             const hasTollLines = (data.lines || []).some(l => (l.description || '').toLowerCase().includes('tol') && ((Number(l.unitPrice) || 0) > 0 || (Number(l.quantity) || 0) > 0));
             if (!hasTollLines) {
                 try {
-                    await supabase
-                        .from('toll_entries')
-                        .update({ applied_invoice_id: null, applied_at: null })
-                        .eq('applied_invoice_id', invoiceId);
+                    // Get all invoice line IDs for this invoice
+                    const { data: invoiceLines } = await supabase
+                        .from('invoice_lines')
+                        .select('id')
+                        .eq('invoice_id', invoiceId);
+                    
+                    if (invoiceLines && invoiceLines.length > 0) {
+                        const lineIds = invoiceLines.map(l => l.id);
+                        await supabase
+                            .from('toll_transactions')
+                            .update({ invoice_line_id: null, status: 'new' })
+                            .in('invoice_line_id', lineIds);
+                    }
                 } catch (_) { /* ignore */ }
             }
 
@@ -545,7 +557,67 @@ export default function EditInvoicePage() {
             setIsSubmitting(false);
         }
     };
-    
+
+    // Tol toevoegen aan factuur
+    const handleAddToll = async () => {
+        if (!invoiceId) return;
+        setIsAddingToll(true);
+        try {
+            const headers = await getAuthHeaders();
+            headers.set('Content-Type', 'application/json');
+            const res = await fetch(`/api/invoices/${invoiceId}/add-toll`, {
+                method: 'POST',
+                headers,
+            });
+            const json = await res.json().catch(() => null);
+            if (!res.ok) {
+                throw new Error(json?.details || json?.error || 'Tol toevoegen mislukt');
+            }
+            
+            toast({
+                title: 'Tol toegevoegd',
+                description: json.message || `${json.matchedTransactions} toltransactie(s) gekoppeld`,
+            });
+
+            // Reload invoice to show updated lines
+            const { data: invRow, error } = await supabase
+                .from('invoices')
+                .select('*, invoice_lines(*)')
+                .eq('id', invoiceId)
+                .single();
+            if (error || !invRow) throw error;
+
+            const lines = (invRow.invoice_lines || []).map((l: any) => ({
+                id: l.id,
+                description: l.description || '',
+                quantity: Number(l.quantity) || 0,
+                unitPrice: Number(l.unit_price) || 0,
+                vatRate: Number(l.vat_rate) || 21,
+                total: Number(l.total) || 0,
+            }));
+
+            reset({
+                invoiceNumber: invRow.invoice_number || '',
+                invoiceDate: invRow.invoice_date ? new Date(invRow.invoice_date) : new Date(),
+                dueDate: invRow.due_date ? new Date(invRow.due_date) : new Date(),
+                reference: invRow.reference || '',
+                footerText: invRow.footer_text || '',
+                showDailyTotals: invRow.show_daily_totals || false,
+                showWeeklyTotals: invRow.show_weekly_totals || false,
+                lines,
+            }, { keepDirty: false });
+        } catch (error: any) {
+            console.error('Add toll error:', error);
+            toast({
+                variant: 'destructive',
+                title: 'Tol toevoegen mislukt',
+                description: error?.message || 'Kon tol niet toevoegen aan factuur',
+            });
+        } finally {
+            setIsAddingToll(false);
+        }
+    };
+
     const handleStatusChange = async (newStatus: InvoiceStatus) => {
          if (!invoice) return;
         
@@ -770,13 +842,26 @@ export default function EditInvoicePage() {
                     <CardHeader>
                         <div className="flex justify-end items-center gap-2">
                             {!isReadOnly && (
-                                <Button type="submit" disabled={isSubmitting}>
-                                    {isSubmitting ? <Loader2 className="animate-spin mr-2"/> : <Save className="mr-2 h-4 w-4" />}
-                                    Wijzigingen Opslaan
-                                </Button>
+                                <>
+                                    <Button type="submit" disabled={isSubmitting}>
+                                        {isSubmitting ? <Loader2 className="animate-spin mr-2"/> : <Save className="mr-2 h-4 w-4" />}
+                                        Wijzigingen Opslaan
+                                    </Button>
+                                    <Button 
+                                        type="button" 
+                                        variant="outline" 
+                                        onClick={handleAddToll} 
+                                        disabled={isAddingToll || isSubmitting}
+                                    >
+                                        {isAddingToll ? (
+                                            <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                                        ) : (
+                                            <Coins className="mr-2 h-4 w-4" />
+                                        )}
+                                        Tol Toevoegen
+                                    </Button>
+                                </>
                             )}
-
-                            {/* Tol toevoegen via factuur is verwijderd; dit blok blijft leeg */}
 
                              <Button type="button" variant="secondary" onClick={handleDownloadPdf} disabled={isDownloading}>
                                 {isDownloading ? <Loader2 className="animate-spin mr-2"/> : <Download className="mr-2 h-4 w-4" />}

@@ -69,7 +69,7 @@ export async function PATCH(req: NextRequest) {
 
       const { data: txs, error: txErr } = await adminClient
         .from('toll_transactions')
-        .select('id,license_plate,transaction_date,amount,vat_rate,status,invoice_line_id')
+        .select('id,license_plate,transaction_date,amount,vat_rate,country,status,invoice_line_id')
         .in('id', ids);
       if (txErr) throw txErr;
       const rows = (txs || []) as any[];
@@ -77,18 +77,28 @@ export async function PATCH(req: NextRequest) {
 
       const plates = new Set(rows.map((t) => String(t.license_plate || '').toUpperCase()));
       const dates = new Set(rows.map((t) => String(t.transaction_date || '')));
+      const vatRates = new Set(rows.map((t) => Number(t.vat_rate ?? 21)));
       if (plates.size !== 1 || dates.size !== 1) {
         return NextResponse.json({ error: 'Transactions must be from the same license_plate and transaction_date' }, { status: 400 });
+      }
+      if (vatRates.size !== 1) {
+        return NextResponse.json({ error: 'Transactions must have the same VAT rate. Group transactions with different VAT rates separately.' }, { status: 400 });
       }
       const dateIso = Array.from(dates)[0];
       const dateLabel = format(new Date(dateIso), 'dd-MM-yyyy', { locale: nl });
       const weekday = format(new Date(dateIso), 'EEEE', { locale: nl });
+      const vatRateToSet = Array.from(vatRates)[0];
 
       const sum = rows.reduce((acc, t) => acc + Number(t.amount || 0), 0);
       const total = Math.round((sum + Number.EPSILON) * 100) / 100;
 
-      const vatSet = new Set(rows.map((t) => Number(t.vat_rate ?? 21)));
-      const vatRateToSet = vatSet.size === 1 ? Array.from(vatSet)[0] : 21;
+      // Determine country for description (prefer most common country in group)
+      const countryCounts = new Map<string, number>();
+      for (const tx of rows) {
+        const c = String(tx.country || '').toUpperCase() || 'UNKNOWN';
+        countryCounts.set(c, (countryCounts.get(c) || 0) + 1);
+      }
+      const mostCommonCountry = Array.from(countryCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || 'UNKNOWN';
 
       const { data: lines, error: lineErr } = await adminClient
         .from('invoice_lines')
@@ -96,22 +106,93 @@ export async function PATCH(req: NextRequest) {
         .eq('invoice_id', invoiceId);
       if (lineErr) throw lineErr;
 
+      // Determine country label for matching
+      let countryLabel = '';
+      if (mostCommonCountry === 'BE') countryLabel = 'belgië';
+      else if (mostCommonCountry === 'DE') countryLabel = 'duitsland';
+      else if (mostCommonCountry === 'FR') countryLabel = 'frankrijk';
+
+      // Filter tol lines by ALL criteria: kenteken (via invoice), tol, datum, land, VAT percentage
+      // Note: kenteken and week are already verified via invoice reference
       const matchingTolLines = (lines || []).filter((l: any) => {
         const desc = String(l.description || '').toLowerCase();
-        return desc.includes('tol') && desc.includes(dateLabel.toLowerCase());
+        const lineVatRate = Number(l.vat_rate ?? 21);
+        
+        // Must contain "tol"
+        if (!desc.includes('tol')) return false;
+        
+        // Must contain the date
+        if (!desc.includes(dateLabel.toLowerCase())) return false;
+        
+        // Must have matching VAT rate
+        if (lineVatRate !== vatRateToSet) return false;
+        
+        // Must match country if country is known
+        if (countryLabel && !desc.includes(countryLabel)) return false;
+        
+        return true;
       });
-      const blankTolLines = matchingTolLines.filter((l: any) => Number(l.unit_price) === 0 && Number(l.quantity || 0) === 0);
-      const target = (blankTolLines.length ? blankTolLines : matchingTolLines)[0] as any | undefined;
+      
+      // If no line exists for this VAT rate + country combination, look for blank placeholder lines
+      // Blank lines should still match on: tol, datum, and optionally country
+      const blankTolLines = (lines || []).filter((l: any) => {
+        const desc = String(l.description || '').toLowerCase();
+        
+        // Must contain "tol"
+        if (!desc.includes('tol')) return false;
+        
+        // Must contain the date
+        if (!desc.includes(dateLabel.toLowerCase())) return false;
+        
+        // Must be blank (quantity=0 and unit_price=0)
+        if (Number(l.unit_price) !== 0 || Number(l.quantity || 0) !== 0) return false;
+        
+        return true;
+      });
+      
+      let targetLine: any | undefined;
+      if (matchingTolLines.length > 0) {
+        // Prefer blank placeholder lines with matching VAT rate and country
+        const blankWithVatAndCountry = matchingTolLines.filter((l: any) => 
+          Number(l.unit_price) === 0 && Number(l.quantity || 0) === 0
+        );
+        if (blankWithVatAndCountry.length > 0) {
+          targetLine = blankWithVatAndCountry[0];
+        } else {
+          // Use first matching line (should be unique based on all criteria)
+          targetLine = matchingTolLines[0];
+        }
+      } else if (blankTolLines.length > 0) {
+        // If no exact match, use blank placeholder line
+        // Prefer one that matches country if available
+        if (countryLabel) {
+          const countryMatched = blankTolLines.find((l: any) => 
+            String(l.description).toLowerCase().includes(countryLabel)
+          );
+          targetLine = countryMatched || blankTolLines[0];
+        } else {
+          targetLine = blankTolLines[0];
+        }
+      }
 
-      let invoiceLineId: string | null = target?.id ?? null;
+      let invoiceLineId: string | null = targetLine?.id ?? null;
       if (!invoiceLineId) {
         if (!createIfMissing) {
           return NextResponse.json(
-            { error: `No tol invoice line found for ${dateLabel} and createIfMissing=false` },
+            { error: `No tol invoice line found for ${dateLabel} with VAT rate ${vatRateToSet}% and createIfMissing=false` },
             { status: 400 }
           );
         }
-        const description = `${weekday} ${dateLabel}\nTol`;
+        // Create new invoice line with appropriate description and VAT rate
+        let countryLabel = '';
+        if (mostCommonCountry === 'BE') countryLabel = 'België';
+        else if (mostCommonCountry === 'DE') countryLabel = 'Duitsland';
+        else if (mostCommonCountry === 'FR') countryLabel = 'Frankrijk';
+        
+        const description = countryLabel 
+          ? `${weekday} ${dateLabel}\nTol ${countryLabel}`
+          : `${weekday} ${dateLabel}\nTol`;
+        
         const { data: created, error: insErr } = await adminClient
           .from('invoice_lines')
           .insert([{ invoice_id: invoiceId, quantity: 1, description, unit_price: total, vat_rate: vatRateToSet, total }])

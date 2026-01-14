@@ -5,7 +5,8 @@ import { useState, useEffect } from 'react';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/use-auth';
 import { supabase } from '@/lib/supabase/client';
-import { getYear, getISOWeek } from 'date-fns';
+import { getYear } from 'date-fns';
+import { getCustomWeek, getCustomWeekYear } from '@/lib/utils';
 import { Users, FileClock, FileCheck2, CalendarOff, Receipt, Building, BarChart3, Truck, BookText, DollarSign, Briefcase, TrendingUp, Building2, Landmark, ArrowDown, ArrowUp, Calculator, AreaChart, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
@@ -91,7 +92,7 @@ export default function AdminPage() {
         const checkRates = async () => {
             try {
                 const currentDate = new Date();
-                const weekId = `${getYear(currentDate)}-${getISOWeek(currentDate)}`;
+                const weekId = `${getCustomWeekYear(currentDate)}-${getCustomWeek(currentDate)}`;
                 const { data: custRows } = await supabase
                     .from('customers')
                     .select('id')

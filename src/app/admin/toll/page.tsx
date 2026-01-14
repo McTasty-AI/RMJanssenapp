@@ -239,7 +239,8 @@ export default function TollAdminPage() {
       const json = await res.json().catch(() => null);
       if (!res.ok) throw new Error(json?.details || json?.error || "Import failed");
       setImportResult(json);
-      toast({ title: "Import afgerond", description: `Nieuw: ${json.insertedRows}, duplicaten: ${json.skippedDuplicates}` });
+      const toastDesc = `Geïmporteerd: ${json.insertedRows} regels`;
+      toast({ title: "Import afgerond", description: toastDesc });
       await loadDashboard();
     } catch (e: any) {
       console.error("[TOLL] import error", e);
@@ -329,7 +330,7 @@ export default function TollAdminPage() {
         <CardHeader>
           <CardTitle>Tolbeheer – Matchen &amp; Afstemmen</CardTitle>
           <CardDescription>
-            Upload tol-export (Excel) → dubbele uploads worden overgeslagen → transacties worden automatisch gematcht met conceptfacturen.
+            Upload tol-export (Excel) → transacties worden automatisch gematcht met conceptfacturen. Verschillende BTW percentages (0% en 21%) worden automatisch gescheiden op aparte factuurregels.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -364,7 +365,7 @@ export default function TollAdminPage() {
               <div className="rounded-md border p-4 space-y-3">
                 <div className="text-sm font-medium">Excel upload</div>
                 <div className="text-sm text-muted-foreground">
-                  Kies een bestand, map de kolommen, en importeer. Tijdstip is optioneel, maar aanbevolen voor betere duplicate-detectie.
+                  Kies een bestand, map de kolommen, en importeer. Tijdstip is optioneel.
                 </div>
                 <div className="flex flex-col md:flex-row gap-3 md:items-center">
                   <Input
@@ -581,14 +582,24 @@ export default function TollAdminPage() {
                 {importResult && (
                   <div className="text-sm">
                     Parsed: <span className="font-medium">{importResult.parsedRows}</span> · Inserted:{" "}
-                    <span className="font-medium">{importResult.insertedRows}</span> · Duplicates skipped:{" "}
-                    <span className="font-medium">{importResult.skippedDuplicates}</span> · Gekoppeld:{" "}
+                    <span className="font-medium">{importResult.insertedRows}</span>
+                    {" · "}Gekoppeld:{" "}
                     <span className="font-medium">{importResult.reconcile?.matchedTransactions ?? 0}</span>
                   </div>
                 )}
+                {importResult?.infoMessages && importResult.infoMessages.length > 0 && (
+                  <div className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-md p-3">
+                    <div className="font-medium mb-1">Informatie</div>
+                    <ul className="list-disc ml-5">
+                      {importResult.infoMessages.map((msg: string, idx: number) => (
+                        <li key={idx}>{msg}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 {importResult?.warnings?.length > 0 && (
-                  <div className="text-sm text-amber-700">
-                    <div className="font-medium">Let op</div>
+                  <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
+                    <div className="font-medium mb-1">Let op</div>
                     <ul className="list-disc ml-5">
                       {importResult.warnings.map((w: string, idx: number) => (
                         <li key={idx}>{w}</li>

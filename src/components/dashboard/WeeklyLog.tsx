@@ -19,14 +19,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter as TFoot } from '@/components/ui/table';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from '@/hooks/use-toast';
-import { addWeeks, subWeeks, getISOWeek, getISOWeekYear, getYear, format, startOfWeek, addDays, set, isBefore, parseISO } from 'date-fns';
+import { addWeeks, subWeeks, getYear, format, startOfWeek, addDays, set, isBefore, parseISO } from 'date-fns';
 import { nl } from 'date-fns/locale';
 import { isHoliday } from '@/lib/holidays';
 import { ChevronLeft, ChevronRight, CalendarDays, AlertCircle, Save, Truck, Send, Euro, Unlock, User as UserIcon, BedDouble, Hash, CheckCircle, Clock } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { useIsMobile } from '@/hooks/use-is-mobile';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { cn } from '@/lib/utils';
+import { cn, getCustomWeek, getCustomWeekYear } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Checkbox } from '../ui/checkbox';
@@ -769,7 +769,7 @@ export function WeeklyLogForm({
                 </Button>
                 <div className='text-center'>
                     <CardTitle className="font-headline">
-                        Week {getISOWeek(startOfWeek(new Date(weekData.days[0].date), {weekStartsOn: 1}))} ({getISOWeekYear(startOfWeek(new Date(weekData.days[0].date), {weekStartsOn: 1}))})
+                        Week {getCustomWeek(startOfWeek(new Date(weekData.days[0].date), {weekStartsOn: 1}))} ({getCustomWeekYear(startOfWeek(new Date(weekData.days[0].date), {weekStartsOn: 1}))})
                     </CardTitle>
                     <p className="text-sm font-normal text-muted-foreground">
                         {format(startOfWeek(new Date(weekData.days[0].date), {weekStartsOn:1}), 'd MMM', {locale: nl})} - {format(addDays(startOfWeek(new Date(weekData.days[0].date), {weekStartsOn:1}), 6), 'd MMM yyyy', {locale: nl})}
