@@ -53,7 +53,11 @@ export default function AdminRatesPage() {
     const [timeRange, setTimeRange] = useState<TimeRange>('month');
     const { toast } = useToast();
 
-    const selectedWeekId = useMemo(() => `${getCustomWeekYear(selectedWeek)}-${getCustomWeek(selectedWeek)}`, [selectedWeek]);
+    const selectedWeekId = useMemo(() => {
+        const year = getCustomWeekYear(selectedWeek);
+        const week = getCustomWeek(selectedWeek);
+        return `${year}-${String(week).padStart(2, '0')}`;
+    }, [selectedWeek]);
 
     const { control, handleSubmit, reset, setValue, watch, formState: { isDirty } } = useForm<{ rates: RateFormData[] }>({
         resolver: zodResolver(formSchema),

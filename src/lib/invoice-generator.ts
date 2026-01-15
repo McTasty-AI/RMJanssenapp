@@ -59,11 +59,48 @@ function round2(n: number): number {
     return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Get the hourly rate for a customer on a specific date
+ * Uses historical rates if available, falls back to hourlyRate field
+ */
+function getHourlyRateForDate(customer: Customer, date: string | Date): number {
+    const targetDate = typeof date === 'string' ? new Date(date) : date;
+    // Normalize to start of day for accurate date comparison
+    const targetDateNormalized = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+    
+    // If customer has historical rates, find the most recent one before or on the target date
+    if (customer.hourlyRates && customer.hourlyRates.length > 0) {
+        // Sort by effective date descending
+        const sortedRates = [...customer.hourlyRates].sort((a, b) => {
+            const dateA = new Date(a.effectiveDate);
+            const dateB = new Date(b.effectiveDate);
+            const normalizedA = new Date(dateA.getFullYear(), dateA.getMonth(), dateA.getDate());
+            const normalizedB = new Date(dateB.getFullYear(), dateB.getMonth(), dateB.getDate());
+            return normalizedB.getTime() - normalizedA.getTime();
+        });
+        
+        // Find the first rate where effectiveDate <= targetDate
+        const applicableRate = sortedRates.find(rate => {
+            const rateDate = new Date(rate.effectiveDate);
+            const normalizedRateDate = new Date(rateDate.getFullYear(), rateDate.getMonth(), rateDate.getDate());
+            return normalizedRateDate.getTime() <= targetDateNormalized.getTime();
+        });
+        
+        if (applicableRate) {
+            return applicableRate.rate;
+        }
+    }
+    
+    // Fallback to legacy hourlyRate field
+    return customer.hourlyRate || 46.43;
+}
+
 function calculateHourlyRate(
     customer: Customer,
-    dayName: string
+    dayName: string,
+    date?: string | Date
 ): number {
-    const baseRate = customer.hourlyRate || 46.43;
+    const baseRate = date ? getHourlyRateForDate(customer, date) : (customer.hourlyRate || 46.43);
     const dayLower = dayName.toLowerCase();
     
     if (dayLower === 'zaterdag' && customer.saturdaySurcharge) {
@@ -112,7 +149,7 @@ export function generateInvoiceLines(
         // Always add hours line if hours > 0 - always show hours when data exists
         // Use default hourly rate if customer doesn't have one configured
         if (workHours > 0) {
-            const hourlyRate = calculateHourlyRate(customer, day.day);
+            const hourlyRate = calculateHourlyRate(customer, day.day, day.date);
             let description: string;
             
             if (customer.showWorkTimes) {

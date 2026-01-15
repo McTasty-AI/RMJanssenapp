@@ -44,7 +44,9 @@ export default function DashboardPage() {
         const relevantWeeks: string[] = [];
         for (let i = 0; i < 4; i++) {
             const date = subWeeks(today, i);
-            const weekId = `${getCustomWeekYear(date)}-${getCustomWeek(date)}`;
+            const year = getCustomWeekYear(date);
+            const week = getCustomWeek(date);
+            const weekId = `${year}-${String(week).padStart(2, '0')}`;
             relevantWeeks.push(weekId);
         }
         setWeeks(relevantWeeks);

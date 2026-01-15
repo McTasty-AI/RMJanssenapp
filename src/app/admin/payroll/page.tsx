@@ -308,7 +308,9 @@ const MonthlyTotalTable = ({ users, logs, customers, weeks, leaveRequests, drive
             const isHoliday = holidays.some(h => isSameDay(h.date, day));
             if (dayOfWeek === 0 || dayOfWeek === 6 || isHoliday) return;
 
-            const weekId = `${getCustomWeekYear(day)}-${getCustomWeek(day)}`;
+            const year = getCustomWeekYear(day);
+            const week = getCustomWeek(day);
+            const weekId = `${year}-${String(week).padStart(2, '0')}`;
 
             users.forEach(user => {
                 const log = logs.find(l => l.userId === user.uid && l.weekId === weekId);

@@ -100,6 +100,31 @@ function calculateTotals(lines: InvoiceLine[]): { subTotal: number; vatTotal: nu
 }
 
 /**
+ * Fetches hourly rates for a customer and attaches them to the customer object
+ */
+async function fetchCustomerHourlyRates(customer: Customer): Promise<Customer> {
+    if (!customer.id) return customer;
+    
+    const { data: hourlyRates } = await supabase
+        .from('hourly_rates')
+        .select('*')
+        .eq('customer_id', customer.id)
+        .order('effective_date', { ascending: false });
+    
+    if (hourlyRates && hourlyRates.length > 0) {
+        customer.hourlyRates = hourlyRates.map(rate => mapSupabaseToApp({
+            id: rate.id,
+            customerId: rate.customer_id,
+            rate: rate.rate,
+            effectiveDate: rate.effective_date,
+            createdAt: rate.created_at
+        }));
+    }
+    
+    return customer;
+}
+
+/**
  * Finds customer by license plate from weekly log
  * Exported for use in other modules (e.g., approval validation)
  * Only considers days with status 'gewerkt' (worked)
@@ -131,7 +156,10 @@ export async function findCustomerByLicensePlate(weeklyLog: WeeklyLog): Promise<
         return null;
     }
     
-    return mapSupabaseToApp<Customer>(customers[0]);
+    const customer = mapSupabaseToApp<Customer>(customers[0]);
+    
+    // Fetch hourly rates for this customer
+    return await fetchCustomerHourlyRates(customer);
 }
 
 /**
@@ -181,6 +209,9 @@ export async function createInvoiceFromWeeklyLog(
         if (!finalCustomer) {
             throw new Error('Geen klant gevonden voor kenteken in weekstaat.');
         }
+    } else {
+        // Ensure hourly rates are loaded for the provided customer
+        finalCustomer = await fetchCustomerHourlyRates(finalCustomer);
     }
 
     // Fetch weekly rate if not provided and needed
@@ -281,7 +312,9 @@ export async function generateInvoiceLinesFromWeeklyLog(
     weeklyRate?: number
 ): Promise<InvoiceLine[]> {
     const normalizedLog = normalizeWeeklyLog(weeklyLog);
-    return generateInvoiceLines(normalizedLog, customer, weeklyRate);
+    // Ensure hourly rates are loaded for the customer
+    const customerWithRates = await fetchCustomerHourlyRates(customer);
+    return generateInvoiceLines(normalizedLog, customerWithRates, weeklyRate);
 }
 
 /**

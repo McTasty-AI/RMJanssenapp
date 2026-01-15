@@ -237,7 +237,7 @@ export const useWeeklyLogs = (currentDate?: Date) => {
     const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
     const year = getCustomWeekYear(weekStart);
     const week = getCustomWeek(weekStart);
-    const weekId = `${year}-${week}`;
+    const weekId = `${year}-${String(week).padStart(2, '0')}`;
     
     setIsLoaded(false);
 

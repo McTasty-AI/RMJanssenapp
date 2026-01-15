@@ -250,7 +250,9 @@ export default function MonthlyCalendar() {
                 if (isRelevantLog) {
                     workDaysInMonth.forEach(workDay => {
                          const dateString = format(workDay, 'yyyy-MM-dd');
-                         const logWeekId = `${getCustomWeekYear(workDay)}-${getCustomWeek(workDay)}`;
+                         const year = getCustomWeekYear(workDay);
+                         const week = getCustomWeek(workDay);
+                         const logWeekId = `${year}-${String(week).padStart(2, '0')}`;
 
                          if(log.weekId === logWeekId) {
                             const currentStatus = dayStatusMap.get(dateString);
@@ -332,7 +334,7 @@ export default function MonthlyCalendar() {
             let status: WeeklyLogStatus | undefined;
             if (weekStartDate) {
                 const weekYear = getCustomWeekYear(weekStartDate);
-                const weekId = `${weekYear}-${weekNumber}`;
+                const weekId = `${weekYear}-${String(weekNumber).padStart(2, '0')}`;
                 status = weekStatusMap.get(weekId);
             }
             

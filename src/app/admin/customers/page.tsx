@@ -2,25 +2,26 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { customerSchema, type CustomerFormData } from '@/lib/schemas';
-import type { Customer, BillingType, MileageRateType, Vehicle } from '@/lib/types';
+import type { Customer, BillingType, MileageRateType, Vehicle, HourlyRate } from '@/lib/types';
 type LicensePlate = string;
 import { billingTypes, billingTypeTranslations, surchargeOptions, mileageRateTypes, mileageRateTypeTranslations } from '@/lib/types';
 import { supabase } from '@/lib/supabase/client';
-import { mapAppToSupabase, mapSupabaseToApp } from '@/lib/utils';
+import { mapAppToSupabase, mapSupabaseToApp, formatCurrency } from '@/lib/utils';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { PlusCircle, Loader2, ChevronsUpDown, FileClock, Edit, Euro, Percent, Trash2, Workflow } from 'lucide-react';
+import { PlusCircle, Loader2, ChevronsUpDown, FileClock, Edit, Euro, Percent, Trash2, Workflow, Calendar } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@/components/ui/badge';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -88,6 +89,10 @@ export default function AdminCustomersPage() {
     const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
     const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [hourlyRates, setHourlyRates] = useState<HourlyRate[]>([]);
+    const [isLoadingHourlyRates, setIsLoadingHourlyRates] = useState(false);
+    const [isAddHourlyRateDialogOpen, setIsAddHourlyRateDialogOpen] = useState(false);
+    const [newHourlyRate, setNewHourlyRate] = useState({ rate: '', effectiveDate: '' });
     const { toast } = useToast();
 
     const form = useForm<CustomerFormData>({
@@ -167,6 +172,29 @@ export default function AdminCustomersPage() {
         return () => { isMounted = false; customersChannel.unsubscribe(); vehiclesChannel.unsubscribe(); };
     }, [toast, fetchCustomers]);
     
+    const fetchHourlyRates = useCallback(async (customerId: string) => {
+        if (!customerId) {
+            setHourlyRates([]);
+            return;
+        }
+        setIsLoadingHourlyRates(true);
+        try {
+            const { data, error } = await supabase
+                .from('hourly_rates')
+                .select('*')
+                .eq('customer_id', customerId)
+                .order('effective_date', { ascending: false });
+            if (error) throw error;
+            const mapped = (data || []).map(row => mapSupabaseToApp<HourlyRate>(row));
+            setHourlyRates(mapped);
+        } catch (error) {
+            console.error('Error fetching hourly rates:', error);
+            toast({ variant: 'destructive', title: 'Fout bij ophalen uurtarieven' });
+        } finally {
+            setIsLoadingHourlyRates(false);
+        }
+    }, [toast]);
+
     const handleOpenDialog = (customer: Customer | null = null) => {
         setEditingCustomer(customer);
         if (customer) {
@@ -185,6 +213,7 @@ export default function AdminCustomersPage() {
                 showWeeklyTotals: customer.showWeeklyTotals ?? false,
                 showWorkTimes: customer.showWorkTimes ?? false,
             });
+            fetchHourlyRates(customer.id);
         } else {
             form.reset({
                 companyName: '', kvkNumber: '', street: '', houseNumber: '', postalCode: '',
@@ -194,6 +223,7 @@ export default function AdminCustomersPage() {
                 saturdaySurcharge: 100, sundaySurcharge: 100,
                 showDailyTotals: false, showWeeklyTotals: false, showWorkTimes: false,
             });
+            setHourlyRates([]);
         }
         setIsDialogOpen(true);
     };
@@ -467,24 +497,6 @@ export default function AdminCustomersPage() {
                                         />
                                     )}
                                     <div className="grid grid-cols-2 gap-4">
-                                        {(billingType === 'hourly' || billingType === 'combined') && (
-                                            <FormField
-                                                control={form.control}
-                                                name="hourlyRate"
-                                                render={({ field }) => (
-                                                    <FormItem>
-                                                        <FormLabel>Uurtarief</FormLabel>
-                                                        <div className="relative">
-                                                            <Euro className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                                                            <FormControl>
-                                                                <Input type="number" placeholder="45.00" {...field} value={field.value ?? ''} onChange={e => field.onChange(Number(e.target.value))} className="pl-9" />
-                                                            </FormControl>
-                                                        </div>
-                                                        <FormMessage />
-                                                    </FormItem>
-                                                )}
-                                            />
-                                        )}
                                         {(billingType === 'mileage' || billingType === 'combined') && (mileageRateType === 'dot' || mileageRateType === 'fixed') && (
                                             <FormField
                                                 control={form.control}
@@ -504,6 +516,114 @@ export default function AdminCustomersPage() {
                                             />
                                         )}
                                     </div>
+                                    {(billingType === 'hourly' || billingType === 'combined') && editingCustomer && (
+                                        <Card>
+                                            <CardHeader>
+                                                <CardTitle className="flex items-center gap-2">
+                                                    <Calendar className="h-5 w-5" />
+                                                    Historische Uurtarieven
+                                                </CardTitle>
+                                                <CardDescription>
+                                                    Beheer historische uurtarieven voor indexaties. Het tarief met de meest recente geldigheidsdatum wordt gebruikt voor facturering.
+                                                </CardDescription>
+                                            </CardHeader>
+                                            <CardContent className="space-y-4">
+                                                {isLoadingHourlyRates ? (
+                                                    <Skeleton className="h-20 w-full" />
+                                                ) : (
+                                                    <>
+                                                        <div className="flex justify-end">
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                size="sm"
+                                                                onClick={() => {
+                                                                    setNewHourlyRate({ rate: '', effectiveDate: '' });
+                                                                    setIsAddHourlyRateDialogOpen(true);
+                                                                }}
+                                                            >
+                                                                <PlusCircle className="mr-2 h-4 w-4" />
+                                                                Nieuw Tarief Toevoegen
+                                                            </Button>
+                                                        </div>
+                                                        {hourlyRates.length === 0 ? (
+                                                            <p className="text-sm text-muted-foreground text-center py-4">
+                                                                Geen historische tarieven ingesteld. Voeg een tarief toe om te beginnen.
+                                                            </p>
+                                                        ) : (
+                                                            <Table>
+                                                                <TableHeader>
+                                                                    <TableRow>
+                                                                        <TableHead>Geldig vanaf</TableHead>
+                                                                        <TableHead className="text-right">Tarief</TableHead>
+                                                                        <TableHead className="text-right">Acties</TableHead>
+                                                                    </TableRow>
+                                                                </TableHeader>
+                                                                <TableBody>
+                                                                    {(() => {
+                                                                        // Bepaal het meest recente tarief (huidige tarief)
+                                                                        const sortedRates = [...hourlyRates].sort((a, b) => 
+                                                                            new Date(b.effectiveDate).getTime() - new Date(a.effectiveDate).getTime()
+                                                                        );
+                                                                        const currentRateId = sortedRates.length > 0 ? sortedRates[0].id : null;
+                                                                        
+                                                                        return hourlyRates.map((rate) => {
+                                                                            const isCurrentRate = rate.id === currentRateId;
+                                                                            return (
+                                                                                <TableRow key={rate.id} className={isCurrentRate ? 'bg-muted/50' : ''}>
+                                                                                    <TableCell>
+                                                                                        <div className="flex items-center gap-2">
+                                                                                            {new Date(rate.effectiveDate).toLocaleDateString('nl-NL', {
+                                                                                                year: 'numeric',
+                                                                                                month: 'long',
+                                                                                                day: 'numeric'
+                                                                                            })}
+                                                                                            {isCurrentRate && (
+                                                                                                <Badge variant="default" className="text-xs">
+                                                                                                    Huidig
+                                                                                                </Badge>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </TableCell>
+                                                                                    <TableCell className="text-right font-medium">
+                                                                                        {formatCurrency(rate.rate)}
+                                                                                    </TableCell>
+                                                                                    <TableCell className="text-right">
+                                                                                        <Button
+                                                                                            type="button"
+                                                                                            variant="ghost"
+                                                                                            size="sm"
+                                                                                            onClick={async () => {
+                                                                                                if (!confirm('Weet u zeker dat u dit tarief wilt verwijderen?')) return;
+                                                                                                try {
+                                                                                                    const { error } = await supabase
+                                                                                                        .from('hourly_rates')
+                                                                                                        .delete()
+                                                                                                        .eq('id', rate.id);
+                                                                                                    if (error) throw error;
+                                                                                                    toast({ title: 'Tarief verwijderd' });
+                                                                                                    await fetchHourlyRates(editingCustomer.id);
+                                                                                                } catch (error) {
+                                                                                                    console.error('Error deleting hourly rate:', error);
+                                                                                                    toast({ variant: 'destructive', title: 'Fout bij verwijderen tarief' });
+                                                                                                }
+                                                                                            }}
+                                                                                        >
+                                                                                            <Trash2 className="h-4 w-4" />
+                                                                                        </Button>
+                                                                                    </TableCell>
+                                                                                </TableRow>
+                                                                            );
+                                                                        });
+                                                                    })()}
+                                                                </TableBody>
+                                                            </Table>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+                                    )}
                                     <div className="grid grid-cols-2 gap-4">
                                         <FormField
                                             control={form.control}
@@ -765,6 +885,83 @@ export default function AdminCustomersPage() {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {/* Add Hourly Rate Dialog */}
+            <Dialog open={isAddHourlyRateDialogOpen} onOpenChange={setIsAddHourlyRateDialogOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Nieuw Uurtarief Toevoegen</DialogTitle>
+                        <DialogDescription>
+                            Voeg een nieuw historisch uurtarief toe voor {editingCustomer?.companyName || 'deze klant'}.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Tarief (€)</label>
+                            <div className="relative">
+                                <Euro className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="45.00"
+                                    value={newHourlyRate.rate}
+                                    onChange={(e) => setNewHourlyRate({ ...newHourlyRate, rate: e.target.value })}
+                                    className="pl-9"
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Geldig vanaf</label>
+                            <Input
+                                type="date"
+                                value={newHourlyRate.effectiveDate}
+                                onChange={(e) => setNewHourlyRate({ ...newHourlyRate, effectiveDate: e.target.value })}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <DialogClose asChild>
+                            <Button variant="outline">Annuleren</Button>
+                        </DialogClose>
+                        <Button
+                            onClick={async () => {
+                                if (!editingCustomer) return;
+                                if (!newHourlyRate.rate || isNaN(Number(newHourlyRate.rate)) || Number(newHourlyRate.rate) <= 0) {
+                                    toast({ variant: 'destructive', title: 'Ongeldig tarief', description: 'Voer een geldig tarief in.' });
+                                    return;
+                                }
+                                if (!newHourlyRate.effectiveDate) {
+                                    toast({ variant: 'destructive', title: 'Datum vereist', description: 'Selecteer een geldigheidsdatum.' });
+                                    return;
+                                }
+                                try {
+                                    const { error } = await supabase
+                                        .from('hourly_rates')
+                                        .insert({
+                                            customer_id: editingCustomer.id,
+                                            rate: Number(newHourlyRate.rate),
+                                            effective_date: newHourlyRate.effectiveDate
+                                        });
+                                    if (error) throw error;
+                                    toast({ title: 'Uurtarief toegevoegd' });
+                                    await fetchHourlyRates(editingCustomer.id);
+                                    setIsAddHourlyRateDialogOpen(false);
+                                    setNewHourlyRate({ rate: '', effectiveDate: '' });
+                                } catch (error: any) {
+                                    console.error('Error adding hourly rate:', error);
+                                    if (error.code === '23505') {
+                                        toast({ variant: 'destructive', title: 'Dit tarief bestaat al voor deze datum' });
+                                    } else {
+                                        toast({ variant: 'destructive', title: 'Fout bij toevoegen uurtarief' });
+                                    }
+                                }
+                            }}
+                        >
+                            Toevoegen
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

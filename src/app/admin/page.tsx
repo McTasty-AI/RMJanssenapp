@@ -92,7 +92,9 @@ export default function AdminPage() {
         const checkRates = async () => {
             try {
                 const currentDate = new Date();
-                const weekId = `${getCustomWeekYear(currentDate)}-${getCustomWeek(currentDate)}`;
+                const year = getCustomWeekYear(currentDate);
+                const week = getCustomWeek(currentDate);
+                const weekId = `${year}-${String(week).padStart(2, '0')}`;
                 const { data: custRows } = await supabase
                     .from('customers')
                     .select('id')

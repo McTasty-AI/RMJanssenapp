@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { useAuth } from './use-auth';
-import { mapSupabaseToApp } from '@/lib/utils';
+import { mapSupabaseToApp, parseTimeString, parseIntervalString } from '@/lib/utils';
 
 // Cache voor collections om snellere initial load te krijgen
 const collectionCache = new Map<string, { data: any[]; timestamp: number }>();
@@ -85,9 +85,9 @@ export const useUserCollection = <T = any>(collectionName: string) => {
                                 date: dl.date,
                                 day: dl.day_name,
                                 status: dl.status,
-                                startTime: dl.start_time ? { hour: 0, minute: 0 } : { hour: 0, minute: 0 },
-                                endTime: dl.end_time ? { hour: 0, minute: 0 } : { hour: 0, minute: 0 },
-                                breakTime: dl.break_time ? { hour: 0, minute: 0 } : { hour: 0, minute: 0 },
+                                startTime: (dl.start_time ? parseTimeString(dl.start_time) : undefined) || { hour: 0, minute: 0 },
+                                endTime: (dl.end_time ? parseTimeString(dl.end_time) : undefined) || { hour: 0, minute: 0 },
+                                breakTime: (dl.break_time ? parseIntervalString(dl.break_time) : undefined) || { hour: 0, minute: 0 },
                                 startMileage: dl.start_mileage || 0,
                                 endMileage: dl.end_mileage || 0,
                                 toll: dl.toll || 'Geen',

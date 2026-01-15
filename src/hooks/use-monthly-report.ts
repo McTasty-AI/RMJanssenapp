@@ -271,7 +271,9 @@ export const useMonthlyReport = (monthDate: Date) => {
 
         monthlyDataMap.forEach((dayData, dateString) => {
             const date = parseISO(dateString);
-            const weekId = `${getCustomWeekYear(date)}-${getCustomWeek(date)}`;
+            const year = getCustomWeekYear(date);
+            const weekNumber = getCustomWeek(date);
+            const weekId = `${year}-${String(weekNumber).padStart(2, '0')}`;
             if (!weeklyTotals.has(weekId)) weeklyTotals.set(weekId, { weekdayHours: 0, saturdayHours: 0, sundayHolidayHours: 0, surchargeHours: 0, overnights: 0 });
             
             const week = weeklyTotals.get(weekId)!;

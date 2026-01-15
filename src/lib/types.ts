@@ -204,6 +204,14 @@ export const mileageRateTypeTranslations: Record<MileageRateType, string> = {
 export const surchargeOptions = [100, 110, 120, 130, 140, 150] as const;
 export type SurchargePercentage = typeof surchargeOptions[number];
 
+export interface HourlyRate {
+    id: string;
+    customerId: string;
+    rate: number;
+    effectiveDate: string; // ISO date string
+    createdAt?: string; // ISO string
+}
+
 export interface Customer {
     id: string; // Firestore document ID
     companyName: string;
@@ -224,7 +232,8 @@ export interface Customer {
     // Financial details
     billingType?: BillingType;
     mileageRateType?: MileageRateType;
-    hourlyRate?: number;
+    hourlyRate?: number; // Legacy: kept for backward compatibility, use hourlyRates array instead
+    hourlyRates?: HourlyRate[]; // Historical hourly rates
     mileageRate?: number; // Base rate
     overnightRate?: number;
     dailyExpenseAllowance?: number;
